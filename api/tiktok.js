@@ -22,7 +22,7 @@ async function tt(endpoint, token, options) {
   return r.json()
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     var path = req.url.split('?')[0].replace('/api/tiktok', '').replace(/^\//, '')
     var query = req.query || {}
