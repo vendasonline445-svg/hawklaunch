@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply border-hawk-border; }
+  body { @apply bg-hawk-bg text-gray-200 font-sans; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0a0b0f; }
+  ::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+}
+
+@layer components {
+  .sidebar-item {
+    @apply flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-gray-400 transition-all cursor-pointer relative;
+  }
+  .sidebar-item:hover { @apply bg-hawk-card text-gray-200; }
+  .sidebar-item.active {
+    @apply text-hawk-accent;
+    background: rgba(249, 115, 22, 0.1);
+  }
+  .sidebar-item.active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-hawk-accent rounded-r;
+  }
+
+  .card { @apply bg-hawk-card border border-hawk-border rounded-xl p-6; }
+  .card-sm { @apply bg-hawk-card border border-hawk-border rounded-lg p-4; }
+
+  .input {
+    @apply bg-hawk-input border border-hawk-border rounded-md px-3.5 py-2.5
+           text-sm text-gray-200 outline-none transition-colors w-full font-sans;
+  }
+  .input:focus { @apply border-hawk-accent ring-2 ring-hawk-accent/20; }
+
+  .select {
+    @apply input appearance-none pr-8 cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b8fa3' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg
+           text-sm font-semibold cursor-pointer border-none transition-all font-sans;
+  }
+  .btn-primary {
+    @apply text-white;
+    background: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+    box-shadow: 0 4px 20px rgba(249, 115, 22, 0.3);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 6px 30px rgba(249, 115, 22, 0.5);
+    transform: translateY(-1px);
+  }
+  .btn-secondary { @apply bg-hawk-input text-gray-200 border border-hawk-border; }
+  .btn-secondary:hover { @apply border-gray-500; }
+  .btn-ghost { @apply bg-transparent text-gray-400; }
+  .btn-ghost:hover { @apply text-gray-200; }
+  .btn-danger { @apply bg-red-500/10 text-red-400 border border-red-500/20; }
+  .btn-sm { @apply px-3.5 py-1.5 text-xs; }
+
+  .chip {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 bg-hawk-input border border-hawk-border
+           rounded-full text-xs text-gray-400 cursor-pointer transition-all;
+  }
+  .chip:hover { @apply border-gray-500; }
+  .chip.active { @apply border-hawk-accent text-hawk-accent bg-hawk-accent/10; }
+
+  .toggle {
+    @apply w-11 h-6 bg-hawk-border rounded-full cursor-pointer relative transition-colors flex-shrink-0;
+  }
+  .toggle.on { @apply bg-hawk-accent; }
+  .toggle::after {
+    content: '';
+    @apply absolute w-[18px] h-[18px] bg-white rounded-full top-[3px] left-[3px] transition-transform;
+  }
+  .toggle.on::after { transform: translateX(20px); }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide;
+  }
+  .badge-new { @apply bg-purple-500/15 text-purple-400; }
+  .badge-popular { @apply bg-hawk-accent/15 text-hawk-accent; }
+  .badge-catalog { @apply bg-cyan-500/15 text-cyan-400; }
+
+  .label { @apply text-xs font-semibold text-gray-400 uppercase tracking-wider; }
+  .label .required { @apply text-hawk-accent ml-0.5; }
+
+  .step-tab {
+    @apply flex-1 min-w-[90px] px-3 py-2.5 rounded-lg text-center cursor-pointer
+           text-xs font-medium text-gray-500 transition-all whitespace-nowrap;
+  }
+  .step-tab:hover { @apply text-gray-400 bg-hawk-card; }
+  .step-tab.active { @apply bg-hawk-accent text-white font-semibold; }
+  .step-tab.done { @apply text-green-400; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-dot { animation: pulse-dot 2s infinite; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.3s ease-out; }
