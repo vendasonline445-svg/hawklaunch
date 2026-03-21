@@ -1,21 +1,34 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store'
-import { api } from '@/lib/api'
+import { api, clearToken } from '@/lib/api'
 
-const TIKTOK_AUTH_URL = `https://business-api.tiktok.com/portal/auth?app_id=7617705058569814033&state=hawklaunch&redirect_uri=${encodeURIComponent('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/tiktok-oauth-callback')}`
+// OAuth URL with BC scope - forces BC + all accounts selection
+const TIKTOK_AUTH_URL = `https://business-api.tiktok.com/portal/auth?app_id=7617705058569814033&state=hawklaunch&rid=hawklaunch${Date.now()}&redirect_uri=${encodeURIComponent('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/tiktok-oauth-callback')}`
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { connected, bcId, setBcId } = useAppStore()
+  const { connected, bcId, setBcId, setConnected } = useAppStore()
   const [bcs, setBcs] = useState<any[]>([])
   const [accounts, setAccounts] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingAccounts, setLoadingAccounts] = useState(false)
-  const [stats, setStats] = useState({ spend: 0, accounts: 0, active: 0, campaigns: 0, ads: 0 })
+  const [stats, setStats] = useState({ spend: 0, accounts: 0, active: 0, campaigns: 0 })
   const [filter, setFilter] = useState('all')
 
-  // Load BCs on connect
+  function handleDisconnect() {
+    clearToken()
+    setConnected(false)
+    setBcId('')
+    setBcs([])
+    setAccounts([])
+    setStats({ spend: 0, accounts: 0, active: 0, campaigns: 0 })
+    localStorage.removeItem('hawklaunch_connected')
+    localStorage.removeItem('hawklaunch_token')
+    localStorage.removeItem('hawklaunch_bc')
+    localStorage.removeItem('hawklaunch_advertisers')
+  }
+
   useEffect(() => {
     if (!connected) return
     setLoading(true)
@@ -29,13 +42,10 @@ export default function Dashboard() {
           localStorage.setItem('hawklaunch_bc', firstBc)
         }
       })
-      .catch(err => {
-        console.error('BC list error:', err)
-      })
+      .catch(err => console.error('BC list error:', err))
       .finally(() => setLoading(false))
   }, [connected])
 
-  // Load accounts when BC selected
   useEffect(() => {
     if (!bcId) return
     setLoadingAccounts(true)
@@ -43,8 +53,8 @@ export default function Dashboard() {
       .then(res => {
         const list = res.data?.list || []
         setAccounts(list)
-        const active = list.filter((a: any) => 
-          a.advertiser_status === 'STATUS_ENABLE' || a.status === 'STATUS_ENABLE'
+        const active = list.filter((a: any) =>
+          (a.advertiser_status || a.status) === 'STATUS_ENABLE'
         ).length
         setStats(s => ({ ...s, accounts: list.length, active }))
       })
@@ -81,6 +91,11 @@ export default function Dashboard() {
             <div className="w-8 h-8 bg-hawk-accent/10 rounded-md flex items-center justify-center text-base">🔌</div>
             <h2 className="text-lg font-bold">Conexão TikTok</h2>
           </div>
+          {connected && (
+            <button onClick={handleDisconnect} className="btn btn-danger btn-sm">
+              🔌 Desconectar
+            </button>
+          )}
         </div>
         {connected ? (
           <div>
@@ -88,7 +103,6 @@ export default function Dashboard() {
               <span className="w-2 h-2 rounded-full bg-green-500" /> Conectado ao TikTok Business
             </div>
 
-            {/* BC Selector */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="label mb-1.5 block">Business Center</label>
@@ -107,7 +121,12 @@ export default function Dashboard() {
                     ))}
                   </select>
                 ) : (
-                  <div className="text-sm text-gray-500 mt-2">Nenhum BC encontrado — verifique o escopo OAuth</div>
+                  <div className="mt-2">
+                    <div className="text-sm text-yellow-400 mb-2">⚠️ Nenhum BC encontrado</div>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Clique em "Desconectar", depois reconecte. Na tela do TikTok, selecione seu Business Center e marque TODAS as contas antes de confirmar.
+                    </p>
+                  </div>
                 )}
               </div>
               <div>
@@ -120,9 +139,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Accounts */}
             {loadingAccounts ? (
-              <div className="text-sm text-gray-400 py-4">⏳ Carregando {bcId ? 'contas do BC...' : 'contas...'}</div>
+              <div className="text-sm text-gray-400 py-4">⏳ Carregando contas do BC...</div>
             ) : filteredAccounts.length > 0 ? (
               <>
                 <div className="label mb-2">Ad Accounts ({filteredAccounts.length} de {accounts.length})</div>
@@ -132,7 +150,7 @@ export default function Dashboard() {
                     return (
                       <div key={a.advertiser_id} className="bg-hawk-input border border-hawk-border rounded-lg p-3 flex items-center gap-3">
                         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          status === 'STATUS_ENABLE' ? 'bg-green-500' : 
+                          status === 'STATUS_ENABLE' ? 'bg-green-500' :
                           status === 'STATUS_DISABLE' ? 'bg-yellow-500' : 'bg-red-500'
                         }`} />
                         <div className="flex-1 min-w-0">
@@ -145,21 +163,23 @@ export default function Dashboard() {
                   })}
                 </div>
               </>
-            ) : accounts.length === 0 ? (
-              <div className="text-sm text-gray-500 py-4">
-                {bcs.length === 0 
-                  ? '⚠️ Sem Business Center. Re-autorize o OAuth selecionando o BC e todas as contas.'
-                  : 'Nenhuma conta encontrada neste BC.'}
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500 py-4">Nenhuma conta neste filtro.</div>
-            )}
+            ) : bcs.length > 0 ? (
+              <div className="text-sm text-gray-500 py-4">Nenhuma conta encontrada neste BC.</div>
+            ) : null}
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-400 mb-4">
-              Conecte sua conta TikTok Business para começar.
+            <p className="text-sm text-gray-400 mb-3">
+              Conecte sua conta TikTok Business para começar. Na tela de autorização:
             </p>
+            <div className="bg-hawk-input border border-hawk-border rounded-lg p-4 mb-4 text-xs text-gray-300 leading-relaxed">
+              <strong className="text-gray-100">Passo a passo:</strong><br/>
+              1. Clique no botão abaixo<br/>
+              2. Na tela do TikTok, selecione seu <strong className="text-hawk-accent">Business Center</strong><br/>
+              3. Marque <strong className="text-hawk-accent">TODAS as ad accounts</strong> (ou "Select All")<br/>
+              4. Confirme a autorização<br/>
+              5. Você será redirecionado de volta automaticamente
+            </div>
             <a href={TIKTOK_AUTH_URL} className="btn btn-primary">🔗 Conectar TikTok Business</a>
           </>
         )}
@@ -172,7 +192,7 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           {[
-            { type: 'smart-spark', icon: '🔥', title: 'Smart+ Spark Ads', desc: 'Smart+ com vídeos orgânicos via Spark. Melhor performance + social proof.', badge: 'novo', cls: 'badge-new' },
+            { type: 'smart-spark', icon: '🔥', title: 'Smart+ Spark Ads', desc: 'Smart+ com vídeos orgânicos via Spark.', badge: 'novo', cls: 'badge-new' },
             { type: 'smart-catalog', icon: '📦', title: 'Smart+ Catálogo', desc: 'Video Shopping Ads com produtos do catálogo.', badge: 'catálogo', cls: 'badge-catalog' },
             { type: 'manual', icon: '🎯', title: 'Manual', desc: 'Controle total. CBO ou ABO.', badge: 'clássico', cls: 'badge-popular' },
           ].map((c) => (
