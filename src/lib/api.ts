@@ -24,48 +24,36 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     ...options,
   })
   if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
-  const data = await res.json()
-  if (data.code !== undefined && data.code !== 0) {
-    throw new Error(data.message || 'TikTok API error')
-  }
-  return data
+  return res.json()
 }
 
 export const api = {
-  // Auth - exchange code for token
   exchangeToken: (authCode: string) =>
     request('/auth', { method: 'POST', body: JSON.stringify({ auth_code: authCode }) }),
 
-  // BC
+  getToken: () => request('/token'),
+
   getBcList: () => request('/bc/list'),
   getAdvertisers: (bcId: string) => request(`/bc/advertisers?bc_id=${bcId}`),
 
-  // Identity
+  getAccountInfo: (advId: string) => request(`/advertiser?advertiser_id=${advId}`),
+
   getIdentities: (advId: string, type?: string) =>
     request(`/identity?advertiser_id=${advId}${type ? `&identity_type=${type}` : ''}`),
   createIdentity: (body: any) =>
     request('/identity', { method: 'POST', body: JSON.stringify(body) }),
 
-  // Pixel
   getPixels: (advId: string) => request(`/pixel?advertiser_id=${advId}`),
-
-  // Videos
   getVideos: (advId: string) => request(`/videos?advertiser_id=${advId}`),
 
-  // Campaign
   getCampaigns: (advId: string) => request(`/campaign?advertiser_id=${advId}`),
   createCampaign: (body: any) =>
     request('/campaign', { method: 'POST', body: JSON.stringify(body) }),
-
-  // Ad Group
   createAdGroup: (body: any) =>
     request('/adgroup', { method: 'POST', body: JSON.stringify(body) }),
-
-  // Ad
   createAd: (body: any) =>
     request('/ad', { method: 'POST', body: JSON.stringify(body) }),
 
-  // Report
   getReport: (body: any) =>
     request('/report', { method: 'POST', body: JSON.stringify(body) }),
 }
