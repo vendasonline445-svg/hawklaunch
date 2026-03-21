@@ -22,7 +22,7 @@ export default function App() {
     if (oauth === 'success' || connected === 'true') {
       setLoading(true)
       // Fetch token from Supabase via our API
-      fetch('/api/tiktok/token')
+      fetch('/api/tk?a=token')
         .then(r => r.json())
         .then(res => {
           if (res.code === 0 && res.data?.access_token) {

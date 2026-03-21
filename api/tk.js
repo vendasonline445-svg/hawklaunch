@@ -1,8 +1,6 @@
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
-async function getToken(req) {
-  var auth = req.headers['authorization']
-  if (auth && auth.startsWith('Bearer ')) return auth.slice(7)
+async function getToken() {
   try {
     var r = await fetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
       headers: { 'x-api-key': process.env.HAWKLAUNCH_API_KEY }
@@ -19,57 +17,25 @@ async function tt(endpoint, token, method, body) {
   return r.json()
 }
 
-function parseQuery(req) {
-  if (req.query && Object.keys(req.query).length > 0) return req.query
-  var raw = req.url || ''
-  var idx = raw.indexOf('?')
-  if (idx === -1) return {}
-  var qs = raw.substring(idx + 1)
-  var result = {}
-  qs.split('&').forEach(function(pair) { var p = pair.split('='); result[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || '') })
-  return result
-}
-
 export default async function handler(req, res) {
-  var query = parseQuery(req)
-  var path = query.path || ''
-  if (!path) {
-    var raw = (req.url || '').split('?')[0]
-    path = raw.replace('/api/tiktok/', '').replace('/api/tiktok', '')
-    if (path.startsWith('/')) path = path.substring(1)
-    path = decodeURIComponent(path)
-  }
-
   try {
-    var APP_ID = process.env.TIKTOK_APP_ID
-    var SECRET = process.env.TIKTOK_APP_SECRET
+    var action = req.query.a
+    var token = await getToken()
+    if (!token && action !== 'token') return res.status(401).json({ error: 'No token' })
 
-    if (path === 'auth' && req.method === 'POST') {
-      var body = req.body || {}
-      if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
-      var r = await fetch(TIKTOK_API + '/oauth2/access_token/', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app_id: APP_ID, secret: SECRET, auth_code: body.auth_code }),
-      })
-      return res.json(await r.json())
-    }
-
-    if (path === 'token') {
+    if (action === 'token') {
       var r = await fetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
         headers: { 'x-api-key': process.env.HAWKLAUNCH_API_KEY }
       })
       return res.json(await r.json())
     }
 
-    var token = await getToken(req)
-    if (!token) return res.status(401).json({ error: 'No token' })
-
-    if (path === 'bc/list') {
+    if (action === 'bc_list') {
       return res.json(await tt('/bc/get/?page_size=50', token))
     }
 
-    if (path === 'bc/advertisers') {
-      var bcId = query.bc_id
+    if (action === 'bc_advertisers') {
+      var bcId = req.query.bc_id
       if (!bcId) return res.status(400).json({ error: 'bc_id required' })
       var first = await tt('/bc/asset/get/?bc_id=' + bcId + '&asset_type=ADVERTISER&page=1&page_size=50', token)
       if (first.code !== 0) return res.json(first)
@@ -86,63 +52,79 @@ export default async function handler(req, res) {
           advertiser_name: a.asset_name || a.advertiser_name || '',
           status: a.advertiser_status || a.status || 'UNKNOWN',
           currency: a.currency || 'BRL',
-          role: a.advertiser_role || '',
+          role: a.advertiser_role || ''
         }
       })
       return res.json({ code: 0, data: { list: mapped, total: mapped.length } })
     }
 
-    if (path === 'identity') {
-      if (req.method === 'POST') return res.json(await tt('/identity/create/', token, 'POST', req.body))
-      var advId = query.advertiser_id
+    if (action === 'identity_get') {
+      var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var ep = '/identity/get/?advertiser_id=' + advId
-      if (query.identity_type) ep += '&identity_type=' + query.identity_type
+      if (req.query.identity_type) ep += '&identity_type=' + req.query.identity_type
       return res.json(await tt(ep, token))
     }
 
-    if (path === 'campaign') {
-      if (req.method === 'POST') return res.json(await tt('/campaign/create/', token, 'POST', req.body))
-      var advId = query.advertiser_id
+    if (action === 'identity_create' && req.method === 'POST') {
+      return res.json(await tt('/identity/create/', token, 'POST', req.body))
+    }
+
+    if (action === 'campaign_get') {
+      var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       return res.json(await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
-    if (path === 'adgroup' && req.method === 'POST') {
+    if (action === 'campaign_create' && req.method === 'POST') {
+      return res.json(await tt('/campaign/create/', token, 'POST', req.body))
+    }
+
+    if (action === 'adgroup_create' && req.method === 'POST') {
       return res.json(await tt('/adgroup/create/', token, 'POST', req.body))
     }
 
-    if (path === 'ad' && req.method === 'POST') {
+    if (action === 'ad_create' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.identity_type) body.identity_type = 'CUSTOMIZED_USER'
       return res.json(await tt('/ad/create/', token, 'POST', body))
     }
 
-    if (path === 'pixel') {
-      var advId = query.advertiser_id
+    if (action === 'pixel') {
+      var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       return res.json(await tt('/pixel/list/?advertiser_id=' + advId, token))
     }
 
-    if (path === 'videos') {
-      var advId = query.advertiser_id
+    if (action === 'videos') {
+      var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       return res.json(await tt('/file/video/ad/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
-    if (path === 'advertiser') {
-      var advId = query.advertiser_id
+    if (action === 'advertiser') {
+      var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var d = await tt('/advertiser/info/?advertiser_ids=' + encodeURIComponent('["' + advId + '"]'), token)
       if (d.data && d.data.list && d.data.list.length) return res.json({ code: 0, data: d.data.list[0] })
       return res.json(d)
     }
 
-    if (path === 'report' && req.method === 'POST') {
+    if (action === 'report' && req.method === 'POST') {
       return res.json(await tt('/report/integrated/get/', token, 'POST', req.body))
     }
 
-    res.status(404).json({ error: 'Not found', path: path })
+    if (action === 'auth' && req.method === 'POST') {
+      var body = req.body || {}
+      if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
+      var r = await fetch(TIKTOK_API + '/oauth2/access_token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_id: process.env.TIKTOK_APP_ID, secret: process.env.TIKTOK_APP_SECRET, auth_code: body.auth_code }),
+      })
+      return res.json(await r.json())
+    }
+
+    res.status(400).json({ error: 'Unknown action', action: action })
   } catch(err) {
     res.status(500).json({ error: err.message })
   }

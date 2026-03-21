@@ -1,6 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/tiktok/:path*", "destination": "/api/tiktok" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
