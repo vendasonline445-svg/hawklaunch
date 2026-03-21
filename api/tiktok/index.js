@@ -53,7 +53,7 @@ export default async function handler(req, res) {
 
   // BC LIST - uses Access-Token header
   if (path === 'bc/list') {
-    const d = await tt('/bc/get/?page_size=100', token)
+    const d = await tt('/bc/get/?page_size=50', token)
     return res.json(d)
   }
 
