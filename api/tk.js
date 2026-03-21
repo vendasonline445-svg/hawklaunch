@@ -37,6 +37,8 @@ export default async function handler(req, res) {
     if (action === 'bc_advertisers') {
       var bcId = req.query.bc_id
       if (!bcId) return res.status(400).json({ error: 'bc_id required' })
+      
+      // Get all assets
       var first = await tt('/bc/asset/get/?bc_id=' + bcId + '&asset_type=ADVERTISER&page=1&page_size=50', token)
       if (first.code !== 0) return res.json(first)
       var all = (first.data && first.data.list) ? first.data.list.slice() : []
@@ -46,13 +48,33 @@ export default async function handler(req, res) {
         var d = await tt('/bc/asset/get/?bc_id=' + bcId + '&asset_type=ADVERTISER&page=' + p + '&page_size=50', token)
         if (d.data && d.data.list) all = all.concat(d.data.list)
       }
+
+      // Enrich with advertiser/info in batches of 50
+      var advIds = all.map(function(a) { return a.asset_id || a.advertiser_id })
+      var infoMap = {}
+      
+      for (var i = 0; i < advIds.length; i += 50) {
+        var batch = advIds.slice(i, i + 50)
+        try {
+          var info = await tt('/advertiser/info/?advertiser_ids=' + encodeURIComponent(JSON.stringify(batch)), token)
+          if (info.data && info.data.list) {
+            info.data.list.forEach(function(a) { infoMap[a.advertiser_id] = a })
+          }
+        } catch(e) {}
+      }
+
       var mapped = all.map(function(a) {
+        var id = a.asset_id || a.advertiser_id
+        var info = infoMap[id] || {}
         return {
-          advertiser_id: a.asset_id || a.advertiser_id,
-          advertiser_name: a.asset_name || a.advertiser_name || '',
-          status: a.advertiser_status || a.status || 'UNKNOWN',
-          currency: a.currency || 'BRL',
-          role: a.advertiser_role || ''
+          advertiser_id: id,
+          advertiser_name: info.name || a.asset_name || '',
+          status: info.status || 'UNKNOWN',
+          currency: info.currency || a.currency || 'BRL',
+          role: a.advertiser_role || '',
+          balance: info.balance || 0,
+          timezone: info.display_timezone || info.timezone || '',
+          company: info.company || '',
         }
       })
       return res.json({ code: 0, data: { list: mapped, total: mapped.length } })
