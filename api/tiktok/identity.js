@@ -1,36 +1,18 @@
-import { tiktokFetch, getTokenFromRequest, errorResponse } from '../_lib/tiktok.js'
-
-export const config = { runtime: 'edge' }
-
-export default async function handler(req) {
-  const token = getTokenFromRequest(req)
-  if (!token) return errorResponse('Unauthorized', 401)
-
+const { tiktokFetch, getToken } = require('../_lib/tiktok')
+export default async function handler(req, res) {
+  const token = getToken(req)
+  if (!token) return res.status(401).json({ error: 'Unauthorized' })
   if (req.method === 'GET') {
-    const { searchParams } = new URL(req.url)
-    const advertiserId = searchParams.get('advertiser_id')
-    const identityType = searchParams.get('identity_type')
-    if (!advertiserId) return errorResponse('advertiser_id required')
-
-    let url = `/identity/get/?advertiser_id=${advertiserId}`
-    if (identityType) url += `&identity_type=${identityType}`
-
+    const { advertiser_id, identity_type } = req.query
+    if (!advertiser_id) return res.status(400).json({ error: 'advertiser_id required' })
+    let url = `/identity/get/?advertiser_id=${advertiser_id}`
+    if (identity_type) url += `&identity_type=${identity_type}`
     const data = await tiktokFetch(url, token)
-    return new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return res.json(data)
   }
-
   if (req.method === 'POST') {
-    const body = await req.json()
-    const data = await tiktokFetch('/identity/create/', token, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-    return new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    const data = await tiktokFetch('/identity/create/', token, { method: 'POST', body: JSON.stringify(req.body) })
+    return res.json(data)
   }
-
-  return errorResponse('Method not allowed', 405)
+  res.status(405).json({ error: 'Method not allowed' })
 }

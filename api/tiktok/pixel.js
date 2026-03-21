@@ -1,18 +1,9 @@
-import { tiktokFetch, getTokenFromRequest, errorResponse } from '../_lib/tiktok.js'
-
-export const config = { runtime: 'edge' }
-
-export default async function handler(req) {
-  const token = getTokenFromRequest(req)
-  if (!token) return errorResponse('Unauthorized', 401)
-
-  const { searchParams } = new URL(req.url)
-  const advertiserId = searchParams.get('advertiser_id')
-  if (!advertiserId) return errorResponse('advertiser_id required')
-
-  const data = await tiktokFetch(`/pixel/list/?advertiser_id=${advertiserId}`, token)
-
-  return new Response(JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+const { tiktokFetch, getToken } = require('../_lib/tiktok')
+export default async function handler(req, res) {
+  const token = getToken(req)
+  if (!token) return res.status(401).json({ error: 'Unauthorized' })
+  const { advertiser_id } = req.query
+  if (!advertiser_id) return res.status(400).json({ error: 'advertiser_id required' })
+  const data = await tiktokFetch(`/pixel/list/?advertiser_id=${advertiser_id}`, token)
+  res.json(data)
 }

@@ -1,20 +1,8 @@
-import { tiktokFetch, getTokenFromRequest, errorResponse } from '../_lib/tiktok.js'
-
-export const config = { runtime: 'edge' }
-
-export default async function handler(req) {
-  const token = getTokenFromRequest(req)
-  if (!token) return errorResponse('Unauthorized', 401)
-
-  if (req.method !== 'POST') return errorResponse('Method not allowed', 405)
-
-  const body = await req.json()
-  const data = await tiktokFetch('/report/integrated/get/', token, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-
-  return new Response(JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+const { tiktokFetch, getToken } = require('../_lib/tiktok')
+export default async function handler(req, res) {
+  const token = getToken(req)
+  if (!token) return res.status(401).json({ error: 'Unauthorized' })
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const data = await tiktokFetch('/report/integrated/get/', token, { method: 'POST', body: JSON.stringify(req.body) })
+  res.json(data)
 }

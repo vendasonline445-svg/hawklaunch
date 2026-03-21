@@ -1,32 +1,16 @@
-import { tiktokFetch, getTokenFromRequest, errorResponse } from '../_lib/tiktok.js'
-
-export const config = { runtime: 'edge' }
-
-export default async function handler(req) {
-  const token = getTokenFromRequest(req)
-  if (!token) return errorResponse('Unauthorized', 401)
-
+const { tiktokFetch, getToken } = require('../_lib/tiktok')
+export default async function handler(req, res) {
+  const token = getToken(req)
+  if (!token) return res.status(401).json({ error: 'Unauthorized' })
   if (req.method === 'POST') {
-    const body = await req.json()
-    const data = await tiktokFetch('/campaign/create/', token, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-    return new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    const data = await tiktokFetch('/campaign/create/', token, { method: 'POST', body: JSON.stringify(req.body) })
+    return res.json(data)
   }
-
   if (req.method === 'GET') {
-    const { searchParams } = new URL(req.url)
-    const advertiserId = searchParams.get('advertiser_id')
-    if (!advertiserId) return errorResponse('advertiser_id required')
-
-    const data = await tiktokFetch(`/campaign/get/?advertiser_id=${advertiserId}&page_size=100`, token)
-    return new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json' },
-    })
+    const { advertiser_id } = req.query
+    if (!advertiser_id) return res.status(400).json({ error: 'advertiser_id required' })
+    const data = await tiktokFetch(`/campaign/get/?advertiser_id=${advertiser_id}&page_size=100`, token)
+    return res.json(data)
   }
-
-  return errorResponse('Method not allowed', 405)
+  res.status(405).json({ error: 'Method not allowed' })
 }
