@@ -14,31 +14,51 @@ export default async function handler(req, res) {
       token = d.data?.access_token
     } catch(e) {}
   }
-
-  if (!token) return res.status(401).json({ error: 'No token available' })
+  if (!token) return res.status(401).json({ error: 'No token' })
 
   const bcId = req.query.bc_id
-  if (!bcId) return res.status(400).json({ error: 'bc_id required' })
 
-  // Fetch all pages
+  // If real BC ID, use BC advertiser endpoint
+  if (bcId && bcId !== 'direct') {
+    let allAccounts = []
+    let page = 1
+    let hasMore = true
+    while (hasMore) {
+      const data = await tiktokFetch(
+        `/bc/advertiser/get/?bc_id=${bcId}&page=${page}&page_size=100`, token
+      )
+      const list = data.data?.list || []
+      allAccounts = allAccounts.concat(list)
+      const total = data.data?.page_info?.total_number || 0
+      hasMore = page < Math.ceil(total / 100)
+      page++
+      if (page > 10) break
+    }
+    return res.json({ code: 0, data: { list: allAccounts, total: allAccounts.length } })
+  }
+
+  // Direct mode: get all authorized advertisers then fetch info
+  const advData = await tiktokFetch(
+    '/oauth2/advertiser/get/?app_id=' + process.env.TIKTOK_APP_ID + '&secret=' + process.env.TIKTOK_APP_SECRET,
+    token
+  )
+  const advIds = advData.data?.list || []
+
+  if (advIds.length === 0) {
+    return res.json({ code: 0, data: { list: [], total: 0 } })
+  }
+
+  // Fetch info for all advertisers in batches of 100
   let allAccounts = []
-  let page = 1
-  let hasMore = true
-
-  while (hasMore) {
-    const data = await tiktokFetch(
-      `/bc/advertiser/get/?bc_id=${bcId}&page=${page}&page_size=100`,
+  for (let i = 0; i < advIds.length; i += 100) {
+    const batch = advIds.slice(i, i + 100)
+    const idsParam = JSON.stringify(batch)
+    const info = await tiktokFetch(
+      `/advertiser/info/?advertiser_ids=${encodeURIComponent(idsParam)}`,
       token
     )
-    const list = data.data?.list || []
+    const list = info.data?.list || []
     allAccounts = allAccounts.concat(list)
-    
-    const totalPages = Math.ceil((data.data?.page_info?.total_number || 0) / 100)
-    hasMore = page < totalPages
-    page++
-    
-    // Safety limit
-    if (page > 10) break
   }
 
   res.json({
