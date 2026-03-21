@@ -30,12 +30,10 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 export const api = {
   exchangeToken: (authCode: string) =>
     request('/auth', { method: 'POST', body: JSON.stringify({ auth_code: authCode }) }),
-
   getToken: () => request('/token'),
 
   getBcList: () => request('/bc/list'),
-  getAdvertisers: (bcId: string) => request(`/bc/advertisers?bc_id=${bcId}`),
-
+  getBcAdvertisers: (bcId: string) => request(`/bc/advertisers?bc_id=${bcId}`),
   getAccountInfo: (advId: string) => request(`/advertiser?advertiser_id=${advId}`),
 
   getIdentities: (advId: string, type?: string) =>
