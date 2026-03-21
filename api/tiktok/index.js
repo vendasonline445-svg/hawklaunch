@@ -1,3 +1,7 @@
+export const config = {
+  api: { bodyParser: false }
+}
+
 const TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
 async function getToken(req) {
@@ -20,11 +24,16 @@ async function tt(endpoint, token, options = {}) {
   return r.json()
 }
 
-function getBody(req) {
-  try {
-    if (req.body && typeof req.body === 'object') return req.body
-    return {}
-  } catch(e) { return {} }
+function readBody(req) {
+  return new Promise((resolve) => {
+    if (req.method === 'GET') return resolve({})
+    let data = ''
+    req.on('data', chunk => data += chunk)
+    req.on('end', () => {
+      try { resolve(JSON.parse(data)) }
+      catch(e) { resolve({}) }
+    })
+  })
 }
 
 export default async function handler(req, res) {
@@ -36,7 +45,7 @@ export default async function handler(req, res) {
     const SECRET = process.env.TIKTOK_APP_SECRET
 
     if (path === 'auth' && req.method === 'POST') {
-      const body = getBody(req)
+      const body = await readBody(req)
       if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
       const r = await fetch(`${TIKTOK_API}/oauth2/access_token/`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -76,7 +85,7 @@ export default async function handler(req, res) {
 
     if (path === 'identity') {
       if (req.method === 'POST') {
-        const body = getBody(req)
+        const body = await readBody(req)
         return res.json(await tt('/identity/create/', token, { method: 'POST', body: JSON.stringify(body) }))
       }
       const { advertiser_id, identity_type } = params
@@ -88,7 +97,7 @@ export default async function handler(req, res) {
 
     if (path === 'campaign') {
       if (req.method === 'POST') {
-        const body = getBody(req)
+        const body = await readBody(req)
         return res.json(await tt('/campaign/create/', token, { method: 'POST', body: JSON.stringify(body) }))
       }
       const { advertiser_id } = params
@@ -97,12 +106,12 @@ export default async function handler(req, res) {
     }
 
     if (path === 'adgroup' && req.method === 'POST') {
-      const body = getBody(req)
+      const body = await readBody(req)
       return res.json(await tt('/adgroup/create/', token, { method: 'POST', body: JSON.stringify(body) }))
     }
 
     if (path === 'ad' && req.method === 'POST') {
-      const body = getBody(req)
+      const body = await readBody(req)
       if (!body.identity_type) body.identity_type = 'CUSTOMIZED_USER'
       return res.json(await tt('/ad/create/', token, { method: 'POST', body: JSON.stringify(body) }))
     }
@@ -128,7 +137,7 @@ export default async function handler(req, res) {
     }
 
     if (path === 'report' && req.method === 'POST') {
-      const body = getBody(req)
+      const body = await readBody(req)
       return res.json(await tt('/report/integrated/get/', token, { method: 'POST', body: JSON.stringify(body) }))
     }
 
