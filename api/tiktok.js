@@ -45,7 +45,7 @@ function parseQuery(req) {
 }
 
 export default async function handler(req, res) {
-  var path = parsePath(req)
+  var path = parseQuery(req).path || parsePath(req)
   var query = parseQuery(req)
 
   try {
