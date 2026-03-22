@@ -239,7 +239,7 @@ function StepCreative() {
   const [loading, setLoading] = useState(false)
   const [destinationUrl, setDestinationUrl] = useState('')
   const [adTexts, setAdTexts] = useState('')
-  const [cta, setCta] = useState('SHOP_NOW')
+  const [ctas, setCtas] = useState<Set<string>>(new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD']))
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
 
   return (
@@ -312,9 +312,18 @@ function StepCreative() {
         <h4 className="label mb-3">Detalhes do anúncio</h4>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div><label className="label mb-1.5 block">URL de destino <span className="required">*</span></label><input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl} onChange={e=>setDestinationUrl(e.target.value)} /></div>
-          <div><label className="label mb-1.5 block">CTA</label><select className="select" value={cta} onChange={e=>setCta(e.target.value)}>
-            <option value="SHOP_NOW">Compre Agora</option><option value="LEARN_MORE">Saiba Mais</option><option value="ORDER_NOW">Peça Já</option><option value="SIGN_UP">Cadastre-se</option>
-          </select></div>
+          <div><label className="label mb-1.5 block">CTAs (selecione vários)</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {[
+                {v:'SHOP_NOW',l:'Compre Agora'},{v:'LEARN_MORE',l:'Saiba Mais'},{v:'ORDER_NOW',l:'Peça Já'},
+                {v:'BUY_NOW',l:'Compre Já'},{v:'SIGN_UP',l:'Cadastre-se'},{v:'CONTACT_US',l:'Contato'},
+                {v:'DOWNLOAD',l:'Baixar'},{v:'VIEW_NOW',l:'Ver Agora'},{v:'VISIT_STORE',l:'Visite a Loja'},
+                {v:'GET_QUOTE',l:'Orçamento'},{v:'APPLY_NOW',l:'Aplicar'},{v:'BOOK_NOW',l:'Reservar'},
+                {v:'SUBSCRIBE',l:'Inscrever'},{v:'WATCH_MORE',l:'Ver Mais'},{v:'GET_OFFER',l:'Ver Oferta'},
+                {v:'GET_STARTED',l:'Começar'},{v:'LISTEN_NOW',l:'Ouvir'},{v:'INSTALL_NOW',l:'Instalar'},
+              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n)}}
+                className={`chip text-[10px] ${ctas.has(c.v)?'active':''}`}>{c.l}</div>)}
+            </div></div>
         </div>
         <label className="label mb-1.5 block">Textos (um por linha)</label>
         <textarea className="input min-h-[60px]" placeholder="Oferta imperdível!" value={adTexts} onChange={e=>setAdTexts(e.target.value)} />
