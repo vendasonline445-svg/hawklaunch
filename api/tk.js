@@ -155,7 +155,7 @@ export default async function handler(req, res) {
             pacing: 'PACING_MODE_SMOOTH',
           }
           adgroupPayload.pixel_id = pixelId
-          if (body.target_cpa) adgroupPayload.bid = parseFloat(body.target_cpa)
+          adgroupPayload.bid = parseFloat(body.target_cpa) || parseFloat(body.budget) || 50
 
           var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
           if (agRes.code !== 0) { log('AdGroup error: ' + agRes.message); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
