@@ -311,7 +311,7 @@ function StepCreative() {
       <div className="pt-5 border-t border-hawk-border">
         <h4 className="label mb-3">Detalhes do anúncio</h4>
         <div className="grid grid-cols-2 gap-4 mb-4">
-          <div><label className="label mb-1.5 block">URL de destino <span className="required">*</span></label><input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl} onChange={e=>setDestinationUrl(e.target.value)} /></div>
+          <div><label className="label mb-1.5 block">URL de destino <span className="required">*</span></label><input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl} onChange={e=>{setDestinationUrl(e.target.value);localStorage.setItem("hawklaunch_dest_url",e.target.value)}} /></div>
           <div><label className="label mb-1.5 block">CTAs (selecione vários)</label>
             <div className="flex flex-wrap gap-1.5 mt-1">
               {[
@@ -326,7 +326,7 @@ function StepCreative() {
             </div></div>
         </div>
         <label className="label mb-1.5 block">Textos (um por linha)</label>
-        <textarea className="input min-h-[60px]" placeholder="Oferta imperdível!" value={adTexts} onChange={e=>setAdTexts(e.target.value)} />
+        <textarea className="input min-h-[60px]" placeholder="Oferta imperdível!" value={adTexts} onChange={e=>{setAdTexts(e.target.value);localStorage.setItem("hawklaunch_ad_texts",e.target.value)}} />
       </div>
       <div className="mt-4 px-4 py-3 bg-hawk-input rounded-lg flex items-center justify-between">
         <span className="text-xs text-gray-400">{creativeMode==='spark-codes'?`${sparkCodeList.length} código(s)`:creativeMode==='library'?`${selectedV.size} vídeo(s)`:'Upload'}</span>
