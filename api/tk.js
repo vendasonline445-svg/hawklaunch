@@ -136,7 +136,7 @@ export default async function handler(req, res) {
               log('Pixel fetch error: ' + e.message)
             }
           }
-          log('Creating ad group...')
+          log('Creating ad group... payload: ' + JSON.stringify(adgroupPayload))
           var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var adgroupPayload = {
             advertiser_id: advId,
