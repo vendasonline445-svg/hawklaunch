@@ -45,4 +45,9 @@ export var api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+
+  testProxy: (proxy: string) => request('a=test_proxy', {
+    method: 'POST',
+    body: JSON.stringify({ proxy }),
+  }),
 }

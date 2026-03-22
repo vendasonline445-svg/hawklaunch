@@ -426,10 +426,80 @@ function StepTargeting() {
     <StepFooter prev={3} next={5}/></div>
 }
 function StepProxy() {
-  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🛡️ Proxy <span className="text-xs text-gray-500 font-normal ml-2">Opcional</span></h2>
-    <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Modo</label><select className="select"><option>Desativado</option><option>Por Conta</option><option>Aleatório</option></select></div><div><label className="label mb-1.5 block">Protocolo</label><select className="select"><option>Auto</option><option>SOCKS5</option><option>HTTP</option></select></div></div>
-    <textarea className="input font-mono text-xs min-h-[80px]" placeholder="ip:porta:user:pass"/>
-    <StepFooter prev={4} next={6}/></div>
+  const [proxyText, setProxyText] = useState(() => localStorage.getItem('hawklaunch_proxy_list') || '')
+  const [testing, setTesting] = useState(false)
+  const [testResults, setTestResults] = useState<any[]>([])
+  const proxyLines = proxyText.split('\n').map(l => l.trim()).filter(Boolean)
+
+  function save(val: string) {
+    setProxyText(val)
+    localStorage.setItem('hawklaunch_proxy_list', val)
+    setTestResults([])
+  }
+
+  async function testAll() {
+    if (!proxyLines.length) return
+    setTesting(true)
+    setTestResults([])
+    const results: any[] = []
+    for (let i = 0; i < proxyLines.length; i++) {
+      const proxy = proxyLines[i]
+      setTestResults([...results, { proxy, status: 'testing' }])
+      try {
+        const r = await api.testProxy(proxy)
+        results.push({ proxy, ...r })
+      } catch(e: any) {
+        results.push({ proxy, ok: false, error: e.message })
+      }
+      setTestResults([...results])
+    }
+    setTesting(false)
+  }
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className="w-8 h-8 bg-hawk-accent/10 rounded-md flex items-center justify-center">🛡️</div>
+        <h2 className="text-lg font-bold">Proxy <span className="text-xs text-gray-500 font-normal ml-2">Opcional</span></h2>
+      </div>
+      <div className="bg-blue-500/8 border border-blue-500/20 rounded-lg p-4 flex gap-3 mb-5">
+        <span className="text-lg">💡</span>
+        <div className="text-[13px] text-gray-300 leading-relaxed">
+          Uma proxy por linha — atribuída sequencialmente por conta. Se tiver menos proxies que contas, rotaciona.<br/>
+          <span className="text-gray-500 text-[12px]">Formatos: <code className="text-hawk-accent">login:senha@host:porta</code> · <code className="text-hawk-accent">host:porta:login:senha</code> · <code className="text-hawk-accent">http://login:senha@host:porta</code></span>
+        </div>
+      </div>
+      <label className="label mb-2 block">Lista de proxies ({proxyLines.length} {proxyLines.length === 1 ? 'proxy' : 'proxies'})</label>
+      <textarea
+        className="input font-mono text-xs min-h-[140px] mb-3"
+        placeholder={"abec7834753bde966d32:e35d1f5e118ccc12@gw.dataimpulse.com:823\nlogin2:senha2@host2:porta2"}
+        value={proxyText}
+        onChange={e => save(e.target.value)}
+      />
+      <button className="btn btn-secondary mb-4" disabled={testing || proxyLines.length === 0} onClick={testAll}>
+        {testing ? '⏳ Testando...' : '🔌 Testar ' + (proxyLines.length > 0 ? proxyLines.length + ' proxy(ies)' : 'proxies')}
+      </button>
+      {testResults.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {testResults.map((r, i) => (
+            <div key={i} className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border text-[12px] font-mono ${r.status === 'testing' ? 'border-hawk-border bg-hawk-input text-gray-400' : r.ok ? 'border-green-500/30 bg-green-500/5 text-green-300' : 'border-red-500/30 bg-red-500/5 text-red-300'}`}>
+              <span className="flex-shrink-0">{r.status === 'testing' ? '⏳' : r.ok ? '✅' : '❌'}</span>
+              <span className="flex-1 truncate text-gray-400">{r.proxy.replace(/:([^:@]+)@/, ':**@')}</span>
+              {r.ok && <span className="text-green-400 font-semibold">{r.ip}</span>}
+              {r.ok && <span className="text-gray-500">{r.latency_ms}ms</span>}
+              {!r.ok && r.error && <span className="text-red-400 truncate max-w-[200px]">{r.error}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {proxyLines.length > 0 && (
+        <div className="text-[12px] text-gray-500 mb-4 px-1">
+          📋 {proxyLines.slice(0, 3).map((p, i) => `Conta ${i+1} → proxy ${i+1}`).join(' · ')}{proxyLines.length < 3 ? ' (demais rotacionam)' : '...'}
+        </div>
+      )}
+      <StepFooter prev={4} next={6}/>
+    </div>
+  )
 }
 function StepLaunch() {
   const { setStep, selectedAccounts, campaignType } = useAppStore()
@@ -465,6 +535,7 @@ function StepLaunch() {
     setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true)
 
     const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
     const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
     const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
     const ctasRaw = localStorage.getItem('hawklaunch_ctas')
@@ -478,6 +549,11 @@ function StepLaunch() {
     if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); setLaunching(false); return }
 
     addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
+    if (proxyList.length > 0) {
+      addLog('INFO', '🛡️ Proxy ativa: ' + proxyList.length + ' proxy(ies) configurada(s)')
+    } else {
+      addLog('WARN', '⚠️ Sem proxy — requests saindo do IP da Vercel')
+    }
     addLog('INFO', selectedAccounts.length + ' conta(s) × ' + sparkCodes.length + ' código(s) × ' + adsPerCode + ' ad(s)/código')
     addLog('DEBUG', 'Budget: R$' + budget + '/dia | CPA: ' + (targetCpa ? 'R$' + targetCpa : 'Auto'))
     setProgress(5)
@@ -529,7 +605,7 @@ function StepLaunch() {
           if (cp > 0) { addLog('DEBUG', '⏳ Delay...'); await rndWait(2000, 5000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp }
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
           try {
             const r = await api.launchSmart(singlePayload)
             if (r.code === 0 && r.data) {
@@ -553,7 +629,6 @@ function StepLaunch() {
       selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
 
     } catch(err: any) {
-      setResult(totalResult)
       addLog('ERROR', 'Fatal: ' + err.message)
     }
 
@@ -574,6 +649,7 @@ function StepLaunch() {
     { ok: true, t: 'Tipo: ' + campaignType },
     { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
     { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
+    { ok: true, t: (localStorage.getItem('hawklaunch_proxy_list') || '').trim() ? '🛡️ Proxy: ' + (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim()).length + ' proxy(ies)' : '⚠️ Sem proxy (IP da Vercel)' },
   ]
 
   // Launch Complete Modal
