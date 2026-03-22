@@ -247,41 +247,41 @@ export default async function handler(req, res) {
 
           // ADS (Smart+) — build creative_list from authorized sparks
           var codesForAccount = body.rotation ? [sparkCodes[i % sparkCodes.length]] : sparkCodes
-          var creativeList = []
+          var adsPerCode = body.ads_per_code || 2
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
-            if (!sd || !sd.ok) continue
-            creativeList.push({
-              creative_info: {
-                ad_format: 'SINGLE_VIDEO',
-                tiktok_item_id: sd.item_id,
-                identity_type: 'AUTH_CODE',
-                identity_id: sd.identity_id,
+            if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
+
+            for (var a = 0; a < adsPerCode; a++) {
+              var adPayload = {
+                request_id: '' + Date.now() + Math.floor(Math.random()*9999),
+                advertiser_id: advId,
+                adgroup_id: adgroupId,
+                ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + (c+1) + '-' + (a+1),
+                creative_list: [{
+                  creative_info: {
+                    ad_format: 'SINGLE_VIDEO',
+                    tiktok_item_id: sd.item_id,
+                    identity_type: 'AUTH_CODE',
+                    identity_id: sd.identity_id,
+                  }
+                }],
+                ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
+                landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
               }
-            })
-          }
-          if (creativeList.length === 0) { L(advId, '⚠️ No creatives'); continue }
+              if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
 
-          var adPayload = {
-            request_id: '' + Date.now() + Math.floor(Math.random()*9999),
-            advertiser_id: advId,
-            adgroup_id: adgroupId,
-            ad_name: (body.ad_name || campPayload.campaign_name) + ' Ad',
-            creative_list: creativeList,
-            ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
-            landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
-          }
-          if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
-
-          L(advId, 'Creating Smart+ Ad with ' + creativeList.length + ' creative(s)...')
-          var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload)
-          if (adRes.code !== 0) {
-            L(advId, '❌ Ad: ' + adRes.message)
-            results.errors.push({ account: advId, step: 'ad', error: adRes.message })
-          } else {
-            var adId = adRes.data.smart_plus_ad_id || '?'
-            L(advId, '✅ Ad: ' + adId + ' (' + creativeList.length + ' creatives)')
-            results.ads++
+              L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
+              var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload)
+              if (adRes.code !== 0) {
+                L(advId, '❌ Ad ' + (c+1) + '-' + (a+1) + ': ' + adRes.message)
+                results.errors.push({ account: advId, step: 'ad', error: adRes.message })
+              } else {
+                var adId = adRes.data.smart_plus_ad_id || '?'
+                L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ': ' + adId)
+                results.ads++
+              }
+            }
           }
         }
       }
