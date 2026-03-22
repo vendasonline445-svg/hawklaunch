@@ -233,12 +233,12 @@ function StepIdentity() {
 function StepCreative() {
   const { selectedAccounts } = useAppStore()
   const [creativeMode, setCreativeMode] = useState<'spark-codes'|'upload'|'library'>('spark-codes')
-  const [sparkCodes, setSparkCodes] = useState('')
+  const [sparkCodes, setSparkCodes] = useState(() => localStorage.getItem('hawklaunch_spark_codes') || '')
   const [videos, setVideos] = useState<any[]>([])
   const [selectedV, setSelectedV] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
-  const [destinationUrl, setDestinationUrl] = useState('')
-  const [adTexts, setAdTexts] = useState('')
+  const [destinationUrl, setDestinationUrl] = useState(() => localStorage.getItem('hawklaunch_dest_url') || '')
+  const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
   const [ctas, setCtas] = useState<Set<string>>(new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD']))
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
 
@@ -339,7 +339,7 @@ function StepCreative() {
 
 /* ====== STEPS 3-6 ====== */
 function StepStructure() {
-  const [name, setName] = useState('')
+  const [name, setName] = useState(() => localStorage.getItem('hawklaunch_offer_name') || '')
   return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🏗️ Structure</h2>
     <div className="grid grid-cols-3 gap-4 mb-4"><div><label className="label mb-1.5 block">Campanhas/conta</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Grupos/campanha</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Anúncios/código</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div></div>
     <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Objetivo</label><select className="select"><option>Conversões</option><option>Leads</option></select></div><div><label className="label mb-1.5 block">Orçamento</label><select className="select"><option>CBO</option><option>ABO</option></select></div></div>
@@ -386,11 +386,11 @@ function StepLaunch() {
     const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
     const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
 
-    if (sparkCodes.length === 0) { log('\u274c Nenhum Spark Code configurado!'); setLaunching(false); return }
-    if (!destUrl) { log('\u274c URL de destino não configurada!'); setLaunching(false); return }
+    if (sparkCodes.length === 0) { log('❌ Nenhum Spark Code configurado!'); setLaunching(false); return }
+    if (!destUrl) { log('❌ URL de destino não configurada!'); setLaunching(false); return }
 
-    log('\ud83d\ude80 Iniciando lançamento Smart+ Spark Ads...')
-    log('\ud83d\udccb ' + selectedAccounts.length + ' conta(s) x ' + sparkCodes.length + ' código(s) x ' + adsPerCode + ' ad(s)/código')
+    log('🚀 Iniciando lançamento Smart+ Spark Ads...')
+    log('📋 ' + selectedAccounts.length + ' conta(s) x ' + sparkCodes.length + ' código(s) x ' + adsPerCode + ' ad(s)/código')
     setProgress(10)
 
     // Calculate schedule start
@@ -399,7 +399,7 @@ function StepLaunch() {
       const mins = schedule === '5min' ? 5 : schedule === '15min' ? 15 : schedule === '30min' ? 30 : 60
       const d = new Date(Date.now() + mins * 60000)
       scheduleStart = d.toISOString().replace('T', ' ').substring(0, 19)
-      log('\u23f0 Agendado para: ' + scheduleStart)
+      log('⏰ Agendado para: ' + scheduleStart)
     }
 
     try {
@@ -420,7 +420,7 @@ function StepLaunch() {
         schedule_start: scheduleStart,
       }
 
-      log('\ud83d\udce1 Enviando para API...')
+      log('📡 Enviando para API...')
       setProgress(30)
 
       const res = await api.launchSmart(payload)
@@ -436,25 +436,25 @@ function StepLaunch() {
         }
 
         log('')
-        log('\ud83d\udcca RESULTADO:')
-        log('\u2705 Campanhas criadas: ' + d.campaigns)
-        log('\u2705 Ad Groups criados: ' + d.adgroups)
-        log('\u2705 Ads criados: ' + d.ads)
+        log('📊 RESULTADO:')
+        log('✅ Campanhas criadas: ' + d.campaigns)
+        log('✅ Ad Groups criados: ' + d.adgroups)
+        log('✅ Ads criados: ' + d.ads)
         if (d.errors && d.errors.length > 0) {
-          log('\u274c Erros: ' + d.errors.length)
-          d.errors.forEach((e: any) => log('  \u274c [' + e.step + '] ' + e.error))
+          log('❌ Erros: ' + d.errors.length)
+          d.errors.forEach((e: any) => log('  ❌ [' + e.step + '] ' + e.error))
         }
       } else {
-        log('\u274c Erro: ' + (res.message || res.error || 'Unknown'))
+        log('❌ Erro: ' + (res.message || res.error || 'Unknown'))
       }
     } catch(err: any) {
-      log('\u274c Fatal: ' + err.message)
+      log('❌ Fatal: ' + err.message)
     }
 
     setLaunching(false)
   }
 
-  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">\ud83d\ude80 Launch</h2>
+  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🚀 Launch</h2>
     <div className="space-y-2 mb-6">
       {[
         { ok: true, t: 'Conectado ao TikTok' },
@@ -464,7 +464,7 @@ function StepLaunch() {
         { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
       ].map((c, i) =>
         <div key={i} className="flex items-center gap-3 py-2 border-b border-hawk-border text-sm">
-          <span className={'w-5 h-5 rounded-full flex items-center justify-center text-xs ' + (c.ok ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400')}>{c.ok ? '\u2713' : '!'}</span>{c.t}
+          <span className={'w-5 h-5 rounded-full flex items-center justify-center text-xs ' + (c.ok ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400')}>{c.ok ? '✓' : '!'}</span>{c.t}
         </div>
       )}
     </div>
@@ -473,7 +473,7 @@ function StepLaunch() {
     <div className="flex gap-2 mb-6">
       {['now', '5min', '15min', '30min', '1h'].map(s =>
         <div key={s} className={'chip ' + (schedule === s ? 'active' : '')} onClick={() => setSchedule(s)}>
-          {s === 'now' ? '\u26a1 Agora' : '+' + s}
+          {s === 'now' ? '⚡ Agora' : '+' + s}
         </div>
       )}
     </div>
@@ -481,7 +481,7 @@ function StepLaunch() {
     <div className="text-center py-6">
       <button onClick={launch} disabled={launching || !selectedAccounts.length}
         className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] transition-all disabled:opacity-50">
-        {launching ? '\u23f3 Lançando...' : '\ud83d\ude80 LANÇAR CAMPANHAS'}
+        {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
       </button>
       <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — Smart+ Spark Ads</p>
     </div>
@@ -496,7 +496,7 @@ function StepLaunch() {
     </div>}
 
     {result && result.campaigns > 0 && <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-      <div className="text-sm font-bold text-green-400 mb-2">\u2705 Lançamento concluído!</div>
+      <div className="text-sm font-bold text-green-400 mb-2">✅ Lançamento concluído!</div>
       <div className="text-xs text-gray-300">
         {result.campaigns} campanha(s), {result.adgroups} ad group(s), {result.ads} ad(s) criado(s)
         {result.errors?.length > 0 && <span className="text-yellow-400 ml-2">({result.errors.length} erro(s))</span>}
@@ -504,8 +504,8 @@ function StepLaunch() {
     </div>}
 
     <div className="flex justify-between mt-6 pt-4 border-t border-hawk-border">
-      <button className="btn btn-secondary" onClick={() => setStep(5)}>\u2190 Proxy</button>
-      {launching && <button className="btn btn-danger btn-sm">\u26d4 Parar</button>}
+      <button className="btn btn-secondary" onClick={() => setStep(5)}>← Proxy</button>
+      {launching && <button className="btn btn-danger btn-sm">⛔ Parar</button>}
     </div>
   </div>
 }
