@@ -215,17 +215,6 @@ export default async function handler(req, res) {
       return res.json(await r.json())
     }
 
-    if (action === 'pixel_events') {
-      var advId = req.query.advertiser_id
-      var pixelId = req.query.pixel_id
-      var d = await tt('/pixel/list/?advertiser_id=' + advId, token)
-      if (d.data && d.data.pixels) {
-        var pixel = d.data.pixels.find(function(p) { return p.pixel_id === pixelId })
-        return res.json({ code: 0, data: pixel || null, all_pixels: d.data.pixels })
-      }
-      return res.json(d)
-    }
-    }
     if (action === 'regions') {
       var advId = req.query.advertiser_id
       var d = await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=CONVERSIONS', token)
