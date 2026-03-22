@@ -107,6 +107,13 @@ export default async function handler(req, res) {
       return res.json(await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
+    if (action === 'tt_proxy') {
+      var ep = req.query.ep
+      if (!ep) return res.status(400).json({ error: 'ep required' })
+      if (req.method === 'POST') return res.json(await tt(ep, token, 'POST', req.body))
+      return res.json(await tt(ep, token))
+    }
+
     if (action === 'spark_authorize' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'advertiser_id and auth_code required' })
