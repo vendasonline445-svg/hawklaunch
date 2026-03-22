@@ -126,7 +126,7 @@ export default async function handler(req, res) {
             adgroup_name: body.adgroup_name || ('AG ' + new Date().toLocaleDateString('pt-BR')),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
             optimization_goal: 'CONVERT',
-            optimization_event: body.optimization_event || 'COMPLETE_PAYMENT',
+            optimization_event: body.optimization_event || 'ON_WEB_ORDER',
             billing_event: 'OCPM',
             bid_type: body.target_cpa ? 'BID_TYPE_CUSTOM' : 'BID_TYPE_NO_BID',
             budget_mode: 'BUDGET_MODE_DAY',

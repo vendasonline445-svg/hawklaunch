@@ -435,7 +435,7 @@ function StepLaunch() {
         call_to_action_list: ctas,
         budget: budget,
         target_cpa: targetCpa || undefined,
-        optimization_event: 'COMPLETE_PAYMENT',
+        optimization_event: 'ON_WEB_ORDER',
         location_ids: ['6105047'],
         schedule_start: scheduleStart,
       }
