@@ -367,39 +367,59 @@ function StepLaunch() {
   const { setStep, selectedAccounts, campaignType } = useAppStore()
   const [launching, setLaunching] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [logs, setLogs] = useState<string[]>([])
   const [schedule, setSchedule] = useState('now')
   const [result, setResult] = useState<any>(null)
+  const [showModal, setShowModal] = useState(false)
+
+  // Log system with categories
+  type LogEntry = { time: string; cat: 'INFO'|'OK'|'ERROR'|'WARN'|'DEBUG'; msg: string }
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [logFilter, setLogFilter] = useState('All')
+
+  function addLog(cat: LogEntry['cat'], msg: string) {
+    setLogs(p => [...p, { time: new Date().toLocaleTimeString(), cat, msg }])
+  }
+
+  const counts = {
+    errors: logs.filter(l => l.cat === 'ERROR').length,
+    warnings: logs.filter(l => l.cat === 'WARN').length,
+    success: logs.filter(l => l.cat === 'OK').length,
+    info: logs.filter(l => l.cat === 'INFO' || l.cat === 'DEBUG').length,
+  }
+
+  const filteredLogs = logFilter === 'All' ? logs :
+    logFilter === 'Errors' ? logs.filter(l => l.cat === 'ERROR') :
+    logFilter === 'Warnings' ? logs.filter(l => l.cat === 'WARN') :
+    logFilter === 'Success' ? logs.filter(l => l.cat === 'OK') :
+    logs.filter(l => l.cat === 'DEBUG')
 
   async function launch() {
-    setLaunching(true); setLogs([]); setProgress(0); setResult(null)
-    const log = (m: string) => setLogs(p => [...p, '[' + new Date().toLocaleTimeString() + '] ' + m])
+    setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true)
 
-    // Get config from localStorage
-    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map(c => c.trim()).filter(c => c.length > 0)
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
     const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
-    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter(t => t.trim())
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
     const ctasRaw = localStorage.getItem('hawklaunch_ctas')
     const ctas = ctasRaw ? JSON.parse(ctasRaw) : ['SHOP_NOW']
     const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '80')
     const targetCpa = parseInt(localStorage.getItem('hawklaunch_target_cpa') || '0')
-    const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
+    const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '2')
     const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
 
-    if (sparkCodes.length === 0) { log('❌ Nenhum Spark Code configurado!'); setLaunching(false); return }
-    if (!destUrl) { log('❌ URL de destino não configurada!'); setLaunching(false); return }
+    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); setLaunching(false); return }
+    if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); setLaunching(false); return }
 
-    log('🚀 Iniciando lançamento Smart+ Spark Ads...')
-    log('📋 ' + selectedAccounts.length + ' conta(s) x ' + sparkCodes.length + ' código(s) x ' + adsPerCode + ' ad(s)/código')
-    setProgress(10)
+    addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
+    addLog('INFO', selectedAccounts.length + ' conta(s) × ' + sparkCodes.length + ' código(s) × ' + adsPerCode + ' ad(s)/código')
+    addLog('DEBUG', 'Budget: R$' + budget + '/dia | CPA: ' + (targetCpa ? 'R$' + targetCpa : 'Auto'))
+    setProgress(5)
 
-    // Calculate schedule start
     let scheduleStart = undefined
     if (schedule !== 'now') {
       const mins = schedule === '5min' ? 5 : schedule === '15min' ? 15 : schedule === '30min' ? 30 : 60
       const d = new Date(Date.now() + mins * 60000)
       scheduleStart = d.toISOString().replace('T', ' ').substring(0, 19)
-      log('⏰ Agendado para: ' + scheduleStart)
+      addLog('INFO', 'Agendado para: ' + scheduleStart)
     }
 
     try {
@@ -420,55 +440,170 @@ function StepLaunch() {
         schedule_start: scheduleStart,
       }
 
-      log('📡 Enviando para API...')
-      setProgress(30)
+      addLog('DEBUG', 'Payload montado, enviando...')
+      setProgress(15)
 
       const res = await api.launchSmart(payload)
 
       if (res.code === 0 && res.data) {
         const d = res.data
         setResult(d)
-        setProgress(100)
 
-        // Show logs from server
         if (d.logs) {
-          d.logs.forEach((l: any) => log(l.message))
+          d.logs.forEach((l: any, idx: number) => {
+            const pct = 15 + ((idx / d.logs.length) * 80)
+            setProgress(Math.round(pct))
+            const isError = l.message.includes('error') || l.message.includes('Error') || l.message.includes('❌')
+            const isOk = l.message.includes('created') || l.message.includes('Created') || l.message.includes('✅')
+            const isWarn = l.message.includes('⚠')
+            addLog(isError ? 'ERROR' : isOk ? 'OK' : isWarn ? 'WARN' : 'INFO', l.message)
+          })
         }
 
-        log('')
-        log('📊 RESULTADO:')
-        log('✅ Campanhas criadas: ' + d.campaigns)
-        log('✅ Ad Groups criados: ' + d.adgroups)
-        log('✅ Ads criados: ' + d.ads)
+        setProgress(100)
+        addLog('OK', '✅ ' + selectedAccounts.length + '/' + selectedAccounts.length + ' conta(s) processada(s)')
+        addLog('OK', 'MISSÃO COMPLETA! ' + d.campaigns + ' campanha(s), ' + d.adgroups + ' grupo(s), ' + d.ads + ' ad(s) criado(s).')
+
         if (d.errors && d.errors.length > 0) {
-          log('❌ Erros: ' + d.errors.length)
-          d.errors.forEach((e: any) => log('  ❌ [' + e.step + '] ' + e.error))
+          d.errors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + (e.error || 'Unknown error')))
         }
+
+        // List accounts with campaigns
+        addLog('INFO', 'Contas com campanhas criadas (' + d.campaigns + '):')
+        selectedAccounts.forEach((acc: any) => {
+          addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id) + ' [ID: ' + acc.advertiser_id + ']')
+        })
       } else {
-        log('❌ Erro: ' + (res.message || res.error || 'Unknown'))
+        addLog('ERROR', 'API Error: ' + (res.message || res.error || 'Unknown'))
       }
     } catch(err: any) {
-      log('❌ Fatal: ' + err.message)
+      addLog('ERROR', 'Fatal: ' + err.message)
     }
 
     setLaunching(false)
   }
 
-  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🚀 Launch</h2>
+  function catColor(cat: string) {
+    if (cat === 'OK') return 'text-green-400 bg-green-500/15'
+    if (cat === 'ERROR') return 'text-red-400 bg-red-500/15'
+    if (cat === 'WARN') return 'text-yellow-400 bg-yellow-500/15'
+    if (cat === 'INFO') return 'text-blue-400 bg-blue-500/15'
+    return 'text-gray-400 bg-gray-500/15'
+  }
+
+  const checklist = [
+    { ok: true, t: 'Conectado ao TikTok' },
+    { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
+    { ok: true, t: 'Tipo: ' + campaignType },
+    { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
+    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
+  ]
+
+  // Launch Complete Modal
+  const LaunchModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !launching && setShowModal(false)}>
+      <div className="bg-hawk-card border border-hawk-border rounded-2xl w-[700px] max-h-[85vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-hawk-border">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{launching ? '⏳' : result && counts.errors === 0 ? '🚀' : '⚠️'}</span>
+            <h3 className="text-lg font-bold">{launching ? 'Lançando...' : 'Launch Complete!'}</h3>
+            {!launching && counts.errors === 0 && <span className="w-5 h-5 bg-green-500 rounded flex items-center justify-center text-[10px] text-white">✓</span>}
+          </div>
+          {!launching && <button className="text-gray-400 hover:text-white text-xl" onClick={() => setShowModal(false)}>✕</button>}
+        </div>
+
+        {/* Progress */}
+        <div className="px-6 py-3 border-b border-hawk-border">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
+            <span>{launching ? Math.min(Math.round(progress/100 * selectedAccounts.length), selectedAccounts.length) : selectedAccounts.length} / {selectedAccounts.length} account(s)</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-1.5 bg-hawk-input rounded-full overflow-hidden">
+            <div className={'h-full rounded-full transition-all duration-300 ' + (counts.errors > 0 ? 'bg-yellow-500' : 'bg-green-500')} style={{width: progress + '%'}} />
+          </div>
+        </div>
+
+        {/* Counters */}
+        <div className="flex gap-2 px-6 py-3 border-b border-hawk-border">
+          <span className="text-xs px-2.5 py-1 rounded-md bg-red-500/10 text-red-400 font-semibold">✕ {counts.errors} Errors</span>
+          <span className="text-xs px-2.5 py-1 rounded-md bg-yellow-500/10 text-yellow-400 font-semibold">⚠ {counts.warnings} Warnings</span>
+          <span className="text-xs px-2.5 py-1 rounded-md bg-green-500/10 text-green-400 font-semibold">✓ {counts.success} Success</span>
+          <span className="text-xs px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 font-semibold">i {counts.info} Info</span>
+        </div>
+
+        {/* Filter tabs */}
+        <div className="flex gap-1 px-6 py-2 border-b border-hawk-border">
+          {['All', 'Errors', 'Warnings', 'Success', 'Debug'].map(f => (
+            <button key={f} onClick={() => setLogFilter(f)}
+              className={'text-[11px] px-2.5 py-1 rounded transition-colors ' + (logFilter === f ? 'bg-hawk-accent/20 text-hawk-accent font-semibold' : 'text-gray-500 hover:text-gray-300')}>
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Log entries */}
+        <div className="max-h-[300px] overflow-y-auto px-6 py-2">
+          {filteredLogs.map((l, i) => (
+            <div key={i} className="flex items-start gap-2.5 py-1.5 border-b border-hawk-border/30 last:border-0">
+              <span className="text-[10px] text-gray-500 font-mono mt-0.5 flex-shrink-0 w-14">{l.time}</span>
+              <span className={'text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ' + catColor(l.cat)}>{l.cat}</span>
+              <span className="text-[11px] text-gray-300 leading-relaxed">{l.msg}</span>
+            </div>
+          ))}
+          {filteredLogs.length === 0 && <div className="text-center py-4 text-gray-500 text-xs">Nenhum log nesta categoria</div>}
+        </div>
+
+        {/* TikTok links */}
+        {!launching && result && result.campaigns > 0 && (
+          <div className="px-6 py-3 border-t border-hawk-border">
+            <div className="text-xs font-semibold text-gray-400 mb-2">Abrir no TikTok Ads Manager:</div>
+            <div className="flex flex-wrap gap-2">
+              {selectedAccounts.map((acc: any) => (
+                <a key={acc.advertiser_id} href={'https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + acc.advertiser_id + '&is_refresh_page=true'}
+                  target="_blank" rel="noopener"
+                  className="text-[11px] px-3 py-1.5 bg-hawk-input border border-hawk-border rounded-md hover:border-hawk-accent hover:text-hawk-accent transition-colors truncate max-w-[200px]">
+                  {acc.advertiser_name || acc.advertiser_id}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-hawk-border bg-hawk-bg/50">
+          <div className="flex items-center gap-2">
+            {!launching && result && (
+              <span className={'text-xs ' + (counts.errors === 0 ? 'text-green-400' : 'text-yellow-400')}>
+                {counts.errors === 0 ? '🎉' : '⚠️'} {result.campaigns} campanha(s) {counts.errors === 0 ? 'criada(s) com sucesso!' : 'com ' + counts.errors + ' erro(s)'}
+              </span>
+            )}
+            {launching && <span className="text-xs text-gray-400">Processando...</span>}
+          </div>
+          <div className="flex gap-2">
+            {!launching && <>
+              <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(logs.map(l => l.time + ' [' + l.cat + '] ' + l.msg).join('\n')) }}>📋 Copy</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowModal(false)}>Fechar</button>
+            </>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  return <div className="card animate-fade-in">
+    <h2 className="text-lg font-bold mb-5">🚀 Launch</h2>
+
+    {/* Checklist */}
     <div className="space-y-2 mb-6">
-      {[
-        { ok: true, t: 'Conectado ao TikTok' },
-        { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
-        { ok: true, t: 'Tipo: ' + campaignType },
-        { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
-        { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
-      ].map((c, i) =>
+      {checklist.map((c, i) =>
         <div key={i} className="flex items-center gap-3 py-2 border-b border-hawk-border text-sm">
           <span className={'w-5 h-5 rounded-full flex items-center justify-center text-xs ' + (c.ok ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400')}>{c.ok ? '✓' : '!'}</span>{c.t}
         </div>
       )}
     </div>
 
+    {/* Schedule */}
     <h4 className="label mb-3">Quando iniciar?</h4>
     <div className="flex gap-2 mb-6">
       {['now', '5min', '15min', '30min', '1h'].map(s =>
@@ -478,38 +613,38 @@ function StepLaunch() {
       )}
     </div>
 
+    {/* Launch button */}
     <div className="text-center py-6">
-      <button onClick={launch} disabled={launching || !selectedAccounts.length}
-        className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] transition-all disabled:opacity-50">
+      <button onClick={launch} disabled={launching || !selectedAccounts.length || checklist.some(c => !c.ok)}
+        className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
       </button>
       <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — Smart+ Spark Ads</p>
     </div>
 
-    {logs.length > 0 && <div className="mt-4">
-      <div className="h-1.5 bg-hawk-input rounded-full overflow-hidden mb-3">
-        <div className="h-full bg-gradient-to-r from-hawk-accent to-orange-400 rounded-full transition-all" style={{width: progress + '%'}} />
-      </div>
-      <div className="max-h-[350px] overflow-y-auto p-3 bg-hawk-input rounded-md font-mono text-[11px] leading-[1.8] text-gray-400">
-        {logs.map((l, i) => <div key={i}>{l}</div>)}
+    {/* Last result summary */}
+    {result && !showModal && <div className="mt-4 p-4 bg-hawk-input border border-hawk-border rounded-lg cursor-pointer hover:border-hawk-accent transition-colors" onClick={() => setShowModal(true)}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{counts.errors === 0 ? '✅' : '⚠️'}</span>
+          <span className="text-sm font-semibold">{result.campaigns} campanha(s), {result.ads} ad(s)</span>
+          <span className="text-xs text-gray-500">— clique para ver logs</span>
+        </div>
+        <div className="flex gap-2">
+          {counts.errors > 0 && <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400">{counts.errors} erros</span>}
+          <span className="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400">{counts.success} ok</span>
+        </div>
       </div>
     </div>}
 
-    {result && result.campaigns > 0 && <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-      <div className="text-sm font-bold text-green-400 mb-2">✅ Lançamento concluído!</div>
-      <div className="text-xs text-gray-300">
-        {result.campaigns} campanha(s), {result.adgroups} ad group(s), {result.ads} ad(s) criado(s)
-        {result.errors?.length > 0 && <span className="text-yellow-400 ml-2">({result.errors.length} erro(s))</span>}
-      </div>
-    </div>}
+    {/* Modal */}
+    {showModal && <LaunchModal />}
 
     <div className="flex justify-between mt-6 pt-4 border-t border-hawk-border">
       <button className="btn btn-secondary" onClick={() => setStep(5)}>← Proxy</button>
-      {launching && <button className="btn btn-danger btn-sm">⛔ Parar</button>}
     </div>
   </div>
 }
-
 
 function StepFooter({prev,next}:{prev:number;next:number}){const{setStep}=useAppStore();return<div className="flex justify-between mt-6 pt-4 border-t border-hawk-border"><button className="btn btn-secondary" onClick={()=>setStep(prev)}>← Voltar</button><button className="btn btn-primary" onClick={()=>setStep(next)}>Próximo →</button></div>}
 function ToggleRow({title,desc,defaultOn,onChange}:{title:string;desc:string;defaultOn?:boolean;onChange?:(v:boolean)=>void}){const[on,setOn]=useState(defaultOn||false);return<div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-md mb-2"><div><div className="text-sm font-semibold">{title}</div><div className="text-[11px] text-gray-500">{desc}</div></div><div className={`toggle ${on?'on':''}`} onClick={()=>{setOn(!on);onChange?.(!on)}}/></div>}
