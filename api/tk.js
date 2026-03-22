@@ -101,7 +101,7 @@ export default async function handler(req, res) {
 
         try {
           // 1. CREATE CAMPAIGN
-          log('Creating campaign...')
+          log('Campaign payload: ' + JSON.stringify(campaignPayload))
           var campaignPayload = {
             advertiser_id: advId,
             campaign_name: body.campaign_name + ' ' + (i+1) + '-' + Date.now().toString().slice(-4) || ('HL ' + new Date().toLocaleDateString('pt-BR') + ' ' + (i+1)),
@@ -112,7 +112,7 @@ export default async function handler(req, res) {
             smart_performance_campaign: true,
           }
           var campRes = await tt('/campaign/create/', token, 'POST', campaignPayload)
-          if (campRes.code !== 0) { log('Campaign error: ' + campRes.message); results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue }
+          if (campRes.code !== 0) { log('Campaign FULL error: ' + JSON.stringify(campRes)); results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue }
           var campaignId = campRes.data.campaign_id
           log('Campaign created: ' + campaignId)
           results.campaigns++
@@ -136,7 +136,7 @@ export default async function handler(req, res) {
               log('Pixel fetch error: ' + e.message)
             }
           }
-          log('Creating ad group... payload: ' + JSON.stringify(adgroupPayload))
+          log('AdGroup payload: ' + JSON.stringify(adgroupPayload))
           var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var adgroupPayload = {
             advertiser_id: advId,
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
           adgroupPayload.bid = parseFloat(body.target_cpa) || parseFloat(body.budget) || 50
 
           var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
-          if (agRes.code !== 0) { log('AdGroup error: ' + agRes.message); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
+          if (agRes.code !== 0) { log('AdGroup FULL error: ' + JSON.stringify(agRes)); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
           var adgroupId = agRes.data.adgroup_id
           log('AdGroup created: ' + adgroupId)
           results.adgroups++
@@ -169,7 +169,7 @@ export default async function handler(req, res) {
 
           for (var c = 0; c < sparkCodes.length; c++) {
             for (var a = 0; a < adsPerCode; a++) {
-              log('Creating ad ' + (c * adsPerCode + a + 1) + '...')
+              log('Ad payload: ' + JSON.stringify(adPayload))
               var adPayload = {
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
@@ -188,7 +188,7 @@ export default async function handler(req, res) {
 
               var adRes = await tt('/ad/create/', token, 'POST', adPayload)
               if (adRes.code !== 0) {
-                log('Ad error: ' + adRes.message)
+                log('Ad FULL error: ' + JSON.stringify(adRes))
                 results.errors.push({ account: advId, step: 'ad', code: sparkCodes[c].substring(0,20), error: adRes.message })
               } else {
                 log('Ad created: ' + adRes.data.ad_id)
