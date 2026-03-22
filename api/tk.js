@@ -105,6 +105,15 @@ export default async function handler(req, res) {
     }
 
     // ============ DEBUG: test ad create with full response ============
+    if (action === 'tt_proxy') {
+      var ep = req.query.ep
+      if (!ep) return res.status(400).json({ error: 'ep required' })
+      if (req.method === 'POST') {
+        return res.json(await tt(ep, token, 'POST', req.body))
+      }
+      return res.json(await tt(ep, token))
+    }
+
     if (action === 'test_ad' && req.method === 'POST') {
       var body = req.body || {}
       var adRes = await tt('/ad/create/', token, 'POST', body)
