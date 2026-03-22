@@ -173,17 +173,16 @@ export default async function handler(req, res) {
               var adPayload = {
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
-                ad_name: body.ad_name || ('Ad ' + new Date().toLocaleDateString('pt-BR') + ' ' + (c+1) + '-' + (a+1)),
-                identity_type: 'AUTH_CODE',
-                identity_id: sparkCodes[c],
-                creative_authorized: true,
-                ad_format: 'SINGLE_VIDEO',
-                landing_page_url: body.landing_page_url || '',
-                ad_text: body.ad_texts && body.ad_texts[0] ? body.ad_texts[0] : '',
-                call_to_action: body.call_to_action || 'SHOP_NOW',
-              }
-              if (body.call_to_action_list && body.call_to_action_list.length > 0) {
-                adPayload.call_to_action_list = body.call_to_action_list
+                creatives: [{
+                  ad_name: body.ad_name || ('Ad ' + new Date().toLocaleDateString('pt-BR') + ' ' + (c+1) + '-' + (a+1)),
+                  identity_type: 'AUTH_CODE',
+                  identity_id: sparkCodes[c],
+                  creative_authorized: true,
+                  ad_format: 'SINGLE_VIDEO',
+                  landing_page_url: body.landing_page_url || '',
+                  ad_text: body.ad_texts && body.ad_texts[0] ? body.ad_texts[0] : 'Shop now',
+                  call_to_action: body.call_to_action || 'SHOP_NOW',
+                }]
               }
 
               var adRes = await tt('/ad/create/', token, 'POST', adPayload)
