@@ -133,7 +133,7 @@ export default async function handler(req, res) {
             budget: body.budget || 80,
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: scheduleStart,
-            location_ids: body.location_ids || ['6105047'],
+            location_ids: body.location_ids || ['2076'],
             pacing: 'PACING_MODE_SMOOTH',
           }
           if (body.pixel_id) adgroupPayload.pixel_id = body.pixel_id
