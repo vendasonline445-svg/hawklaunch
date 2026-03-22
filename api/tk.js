@@ -118,6 +118,23 @@ export default async function handler(req, res) {
           results.campaigns++
 
           // 2. CREATE AD GROUP
+          // Auto-fetch pixel for this account
+          var pixelId = body.pixel_id || null
+          if (!pixelId) {
+            try {
+              var pixelRes = await tt('/pixel/list/?advertiser_id=' + advId, token)
+              if (pixelRes.data && pixelRes.data.pixels && pixelRes.data.pixels.length > 0) {
+                pixelId = pixelRes.data.pixels[0].pixel_id
+                log('Pixel found: ' + pixelId + ' (' + pixelRes.data.pixels[0].pixel_name + ')')
+              } else {
+                log('No pixel found for account ' + advId)
+                results.errors.push({ account: advId, step: 'pixel', error: 'No pixel found' })
+                continue
+              }
+            } catch(e) {
+              log('Pixel fetch error: ' + e.message)
+            }
+          }
           log('Creating ad group...')
           var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var adgroupPayload = {
@@ -136,7 +153,7 @@ export default async function handler(req, res) {
             location_ids: body.location_ids || ['3469034'],
             pacing: 'PACING_MODE_SMOOTH',
           }
-          if (body.pixel_id) adgroupPayload.pixel_id = body.pixel_id
+          adgroupPayload.pixel_id = pixelId
           if (body.target_cpa) adgroupPayload.bid = body.target_cpa
 
           var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
