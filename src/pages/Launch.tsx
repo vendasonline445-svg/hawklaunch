@@ -529,19 +529,20 @@ function StepLaunch() {
           if (cp > 0) { addLog('DEBUG', '⏳ Delay...'); await rndWait(2000, 5000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: (payload.start_seq || 1) + (ai * campsPerAcc) + cp }
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp }
           try {
             const r = await api.launchSmart(singlePayload)
             if (r.code === 0 && r.data) {
-              totalResult.campaigns += r.data.campaigns || 0
-              totalResult.adgroups += r.data.adgroups || 0
-              totalResult.ads += r.data.ads || 0
-              if (r.data.logs) r.data.logs.forEach((l: any) => {
+              const d = r.data as any
+              totalResult.campaigns += d.campaigns || 0
+              totalResult.adgroups += d.adgroups || 0
+              totalResult.ads += d.ads || 0
+              if (d.logs) d.logs.forEach((l: any) => {
                 const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
                 addLog(cat, l.message)
               })
-              if (r.data.errors) allErrors.push(...r.data.errors)
-            } else { addLog('ERROR', 'API: ' + (r.message || r.error || '?')) }
+              if (d.errors) allErrors.push(...d.errors)
+            } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
           } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
         }
       }
