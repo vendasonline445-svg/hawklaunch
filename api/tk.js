@@ -37,8 +37,6 @@ export default async function handler(req, res) {
     if (action === 'bc_advertisers') {
       var bcId = req.query.bc_id
       if (!bcId) return res.status(400).json({ error: 'bc_id required' })
-      
-      // Get all assets
       var first = await tt('/bc/asset/get/?bc_id=' + bcId + '&asset_type=ADVERTISER&page=1&page_size=50', token)
       if (first.code !== 0) return res.json(first)
       var all = (first.data && first.data.list) ? first.data.list.slice() : []
@@ -48,34 +46,19 @@ export default async function handler(req, res) {
         var d = await tt('/bc/asset/get/?bc_id=' + bcId + '&asset_type=ADVERTISER&page=' + p + '&page_size=50', token)
         if (d.data && d.data.list) all = all.concat(d.data.list)
       }
-
-      // Enrich with advertiser/info in batches of 50
       var advIds = all.map(function(a) { return a.asset_id || a.advertiser_id })
       var infoMap = {}
-      
       for (var i = 0; i < advIds.length; i += 50) {
         var batch = advIds.slice(i, i + 50)
         try {
           var info = await tt('/advertiser/info/?advertiser_ids=' + encodeURIComponent(JSON.stringify(batch)), token)
-          if (info.data && info.data.list) {
-            info.data.list.forEach(function(a) { infoMap[a.advertiser_id] = a })
-          }
+          if (info.data && info.data.list) info.data.list.forEach(function(a) { infoMap[a.advertiser_id] = a })
         } catch(e) {}
       }
-
       var mapped = all.map(function(a) {
         var id = a.asset_id || a.advertiser_id
         var info = infoMap[id] || {}
-        return {
-          advertiser_id: id,
-          advertiser_name: info.name || a.asset_name || '',
-          status: info.status || 'UNKNOWN',
-          currency: info.currency || a.currency || 'BRL',
-          role: a.advertiser_role || '',
-          balance: info.balance || 0,
-          timezone: info.display_timezone || info.timezone || '',
-          company: info.company || '',
-        }
+        return { advertiser_id: id, advertiser_name: info.name || a.asset_name || '', status: info.status || 'UNKNOWN', currency: info.currency || 'BRL', role: a.advertiser_role || '', balance: info.balance || 0 }
       })
       return res.json({ code: 0, data: { list: mapped, total: mapped.length } })
     }
@@ -86,30 +69,6 @@ export default async function handler(req, res) {
       var ep = '/identity/get/?advertiser_id=' + advId
       if (req.query.identity_type) ep += '&identity_type=' + req.query.identity_type
       return res.json(await tt(ep, token))
-    }
-
-    if (action === 'identity_create' && req.method === 'POST') {
-      return res.json(await tt('/identity/create/', token, 'POST', req.body))
-    }
-
-    if (action === 'campaign_get') {
-      var advId = req.query.advertiser_id
-      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      return res.json(await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=50', token))
-    }
-
-    if (action === 'campaign_create' && req.method === 'POST') {
-      return res.json(await tt('/campaign/create/', token, 'POST', req.body))
-    }
-
-    if (action === 'adgroup_create' && req.method === 'POST') {
-      return res.json(await tt('/adgroup/create/', token, 'POST', req.body))
-    }
-
-    if (action === 'ad_create' && req.method === 'POST') {
-      var body = req.body || {}
-      if (!body.identity_type) body.identity_type = 'CUSTOMIZED_USER'
-      return res.json(await tt('/ad/create/', token, 'POST', body))
     }
 
     if (action === 'pixel') {
@@ -124,16 +83,108 @@ export default async function handler(req, res) {
       return res.json(await tt('/file/video/ad/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
-    if (action === 'advertiser') {
+    if (action === 'campaign_get') {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      var d = await tt('/advertiser/info/?advertiser_ids=' + encodeURIComponent('["' + advId + '"]'), token)
-      if (d.data && d.data.list && d.data.list.length) return res.json({ code: 0, data: d.data.list[0] })
-      return res.json(d)
+      return res.json(await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
-    if (action === 'report' && req.method === 'POST') {
-      return res.json(await tt('/report/integrated/get/', token, 'POST', req.body))
+    // ============ FULL SMART+ LAUNCH ============
+    if (action === 'launch_smart' && req.method === 'POST') {
+      var body = req.body
+      var results = { campaigns: 0, adgroups: 0, ads: 0, errors: [], logs: [] }
+
+      for (var i = 0; i < body.accounts.length; i++) {
+        var acc = body.accounts[i]
+        var advId = acc.advertiser_id
+        var log = function(msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
+
+        try {
+          // 1. CREATE CAMPAIGN
+          log('Creating campaign...')
+          var campaignPayload = {
+            advertiser_id: advId,
+            campaign_name: body.campaign_name || ('HL ' + new Date().toLocaleDateString('pt-BR') + ' ' + (i+1)),
+            objective_type: 'CONVERSIONS',
+            budget_mode: 'BUDGET_MODE_DAY',
+            budget: body.budget || 80,
+            campaign_type: 'REGULAR_CAMPAIGN',
+            smart_performance_campaign: true,
+          }
+          var campRes = await tt('/campaign/create/', token, 'POST', campaignPayload)
+          if (campRes.code !== 0) { log('Campaign error: ' + campRes.message); results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue }
+          var campaignId = campRes.data.campaign_id
+          log('Campaign created: ' + campaignId)
+          results.campaigns++
+
+          // 2. CREATE AD GROUP
+          log('Creating ad group...')
+          var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+          var adgroupPayload = {
+            advertiser_id: advId,
+            campaign_id: campaignId,
+            adgroup_name: body.adgroup_name || ('AG ' + new Date().toLocaleDateString('pt-BR')),
+            placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
+            optimization_goal: 'CONVERT',
+            optimization_event: body.optimization_event || 'COMPLETE_PAYMENT',
+            billing_event: 'OCPM',
+            bid_type: body.target_cpa ? 'BID_TYPE_CUSTOM' : 'BID_TYPE_NO_BID',
+            budget_mode: 'BUDGET_MODE_DAY',
+            budget: body.budget || 80,
+            schedule_type: 'SCHEDULE_FROM_NOW',
+            schedule_start_time: scheduleStart,
+            location_ids: body.location_ids || ['6105047'],
+            pacing: 'PACING_MODE_SMOOTH',
+          }
+          if (body.pixel_id) adgroupPayload.pixel_id = body.pixel_id
+          if (body.target_cpa) adgroupPayload.bid = body.target_cpa
+
+          var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
+          if (agRes.code !== 0) { log('AdGroup error: ' + agRes.message); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
+          var adgroupId = agRes.data.adgroup_id
+          log('AdGroup created: ' + adgroupId)
+          results.adgroups++
+
+          // 3. CREATE ADS (one per spark code x ads_per_code)
+          var sparkCodes = body.spark_codes || []
+          var adsPerCode = body.ads_per_code || 1
+
+          for (var c = 0; c < sparkCodes.length; c++) {
+            for (var a = 0; a < adsPerCode; a++) {
+              log('Creating ad ' + (c * adsPerCode + a + 1) + '...')
+              var adPayload = {
+                advertiser_id: advId,
+                adgroup_id: adgroupId,
+                ad_name: body.ad_name || ('Ad ' + new Date().toLocaleDateString('pt-BR') + ' ' + (c+1) + '-' + (a+1)),
+                identity_type: 'AUTH_CODE',
+                identity_id: sparkCodes[c],
+                creative_authorized: true,
+                ad_format: 'SINGLE_VIDEO',
+                landing_page_url: body.landing_page_url || '',
+                ad_text: body.ad_texts && body.ad_texts[0] ? body.ad_texts[0] : '',
+                call_to_action: body.call_to_action || 'SHOP_NOW',
+              }
+              if (body.call_to_action_list && body.call_to_action_list.length > 0) {
+                adPayload.call_to_action_list = body.call_to_action_list
+              }
+
+              var adRes = await tt('/ad/create/', token, 'POST', adPayload)
+              if (adRes.code !== 0) {
+                log('Ad error: ' + adRes.message)
+                results.errors.push({ account: advId, step: 'ad', code: sparkCodes[c].substring(0,20), error: adRes.message })
+              } else {
+                log('Ad created: ' + adRes.data.ad_id)
+                results.ads++
+              }
+            }
+          }
+        } catch(err) {
+          log('Fatal error: ' + err.message)
+          results.errors.push({ account: advId, step: 'fatal', error: err.message })
+        }
+      }
+
+      return res.json({ code: 0, data: results })
     }
 
     if (action === 'auth' && req.method === 'POST') {

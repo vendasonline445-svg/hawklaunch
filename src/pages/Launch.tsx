@@ -267,7 +267,7 @@ function StepCreative() {
             <span className="text-base">💡</span>
             <div className="text-[12px] text-gray-300">TikTok app → vídeo → ⋯ → Ad Settings → Generate Code. Um por linha.</div>
           </div>
-          <textarea className="input font-mono text-xs min-h-[120px]" placeholder={"Cole os Spark Ad codes (um por linha):\n\n#sHt4m+ih406ylUODt/1YNSMs84oToAd+KtNAcnyI4MxMdUpHykmr2FfmI6xeX7Y="} value={sparkCodes} onChange={e => setSparkCodes(e.target.value)} />
+          <textarea className="input font-mono text-xs min-h-[120px]" placeholder={"Cole os Spark Ad codes (um por linha):\n\n#sHt4m+ih406ylUODt/1YNSMs84oToAd+KtNAcnyI4MxMdUpHykmr2FfmI6xeX7Y="} value={sparkCodes} onChange={e => { setSparkCodes(e.target.value); localStorage.setItem('hawklaunch_spark_codes', e.target.value) }} />
           {sparkCodeList.length > 0 && <div className="mt-3 space-y-2">
             {sparkCodeList.map((code, i) => (
               <div key={i} className="flex items-center gap-2 px-3 py-2 bg-hawk-bg rounded-md">
@@ -341,11 +341,11 @@ function StepCreative() {
 function StepStructure() {
   const [name, setName] = useState('')
   return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🏗️ Structure</h2>
-    <div className="grid grid-cols-3 gap-4 mb-4"><div><label className="label mb-1.5 block">Campanhas/conta</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Grupos/campanha</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Anúncios/grupo</label><input className="input" type="number" defaultValue={1}/></div></div>
+    <div className="grid grid-cols-3 gap-4 mb-4"><div><label className="label mb-1.5 block">Campanhas/conta</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Grupos/campanha</label><input className="input" type="number" defaultValue={1}/></div><div><label className="label mb-1.5 block">Anúncios/código</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div></div>
     <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Objetivo</label><select className="select"><option>Conversões</option><option>Leads</option></select></div><div><label className="label mb-1.5 block">Orçamento</label><select className="select"><option>CBO</option><option>ABO</option></select></div></div>
-    <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Budget (BRL)</label><input className="input" type="number" defaultValue={50}/></div><div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="Auto"/></div></div>
+    <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Budget (BRL)</label><input className="input" type="number" defaultValue={50}/></div><div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div></div>
     <ToggleRow title="Randomizar orçamento" desc="Valor aleatório"/>
-    <div className="mt-4 pt-4 border-t border-hawk-border"><div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">Oferta</label><input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="CREME FACIAL"/></div><div><label className="label mb-1.5 block">Seq.</label><input className="input" type="number" defaultValue={1}/></div></div>
+    <div className="mt-4 pt-4 border-t border-hawk-border"><div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">Oferta</label><input className="input" value={name} onChange={e=>{setName(e.target.value);localStorage.setItem('hawklaunch_offer_name',e.target.value)}} placeholder="CREME FACIAL"/></div><div><label className="label mb-1.5 block">Seq.</label><input className="input" type="number" defaultValue={1}/></div></div>
     <div className="mt-2 px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">{name||'OFERTA'} 01</div></div>
     <StepFooter prev={2} next={4}/></div>
 }
@@ -369,26 +369,147 @@ function StepLaunch() {
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState<string[]>([])
   const [schedule, setSchedule] = useState('now')
+  const [result, setResult] = useState<any>(null)
+
   async function launch() {
-    setLaunching(true);setLogs([]);setProgress(0)
-    const log=(m:string)=>setLogs(p=>[...p,`[${new Date().toLocaleTimeString()}] ${m}`])
-    log('🔄 Iniciando...');setProgress(5)
-    for(let i=0;i<selectedAccounts.length;i++){const acc=selectedAccounts[i];const pct=((i/selectedAccounts.length)*90)+5
-      log(`📋 [${i+1}/${selectedAccounts.length}] ${acc.advertiser_name||acc.advertiser_id}`);setProgress(pct)
-      try{const cr=await api.createCampaign({advertiser_id:acc.advertiser_id,campaign_name:`HL ${new Date().toLocaleDateString('pt-BR')} ${i+1}`,objective_type:'CONVERSIONS',budget_mode:'BUDGET_MODE_DAY',budget:50})
-        if(cr.code===0)log(`  ✅ ${cr.data?.campaign_id}`);else log(`  ❌ ${cr.message}`)
-      }catch(e:any){log(`  ❌ ${e.message}`)}}
-    setProgress(100);log('🚀 Concluído!');setLaunching(false)
+    setLaunching(true); setLogs([]); setProgress(0); setResult(null)
+    const log = (m: string) => setLogs(p => [...p, '[' + new Date().toLocaleTimeString() + '] ' + m])
+
+    // Get config from localStorage
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map(c => c.trim()).filter(c => c.length > 0)
+    const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter(t => t.trim())
+    const ctasRaw = localStorage.getItem('hawklaunch_ctas')
+    const ctas = ctasRaw ? JSON.parse(ctasRaw) : ['SHOP_NOW']
+    const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '80')
+    const targetCpa = parseInt(localStorage.getItem('hawklaunch_target_cpa') || '0')
+    const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
+    const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
+
+    if (sparkCodes.length === 0) { log('\u274c Nenhum Spark Code configurado!'); setLaunching(false); return }
+    if (!destUrl) { log('\u274c URL de destino não configurada!'); setLaunching(false); return }
+
+    log('\ud83d\ude80 Iniciando lançamento Smart+ Spark Ads...')
+    log('\ud83d\udccb ' + selectedAccounts.length + ' conta(s) x ' + sparkCodes.length + ' código(s) x ' + adsPerCode + ' ad(s)/código')
+    setProgress(10)
+
+    // Calculate schedule start
+    let scheduleStart = undefined
+    if (schedule !== 'now') {
+      const mins = schedule === '5min' ? 5 : schedule === '15min' ? 15 : schedule === '30min' ? 30 : 60
+      const d = new Date(Date.now() + mins * 60000)
+      scheduleStart = d.toISOString().replace('T', ' ').substring(0, 19)
+      log('\u23f0 Agendado para: ' + scheduleStart)
+    }
+
+    try {
+      const payload = {
+        accounts: selectedAccounts,
+        campaign_name: offerName + ' ' + new Date().toLocaleDateString('pt-BR'),
+        adgroup_name: 'AG ' + offerName + ' ' + new Date().toLocaleDateString('pt-BR'),
+        ad_name: offerName,
+        spark_codes: sparkCodes,
+        ads_per_code: adsPerCode,
+        landing_page_url: destUrl,
+        ad_texts: adTexts,
+        call_to_action_list: ctas,
+        budget: budget,
+        target_cpa: targetCpa || undefined,
+        optimization_event: 'COMPLETE_PAYMENT',
+        location_ids: ['6105047'],
+        schedule_start: scheduleStart,
+      }
+
+      log('\ud83d\udce1 Enviando para API...')
+      setProgress(30)
+
+      const res = await api.launchSmart(payload)
+
+      if (res.code === 0 && res.data) {
+        const d = res.data
+        setResult(d)
+        setProgress(100)
+
+        // Show logs from server
+        if (d.logs) {
+          d.logs.forEach((l: any) => log(l.message))
+        }
+
+        log('')
+        log('\ud83d\udcca RESULTADO:')
+        log('\u2705 Campanhas criadas: ' + d.campaigns)
+        log('\u2705 Ad Groups criados: ' + d.adgroups)
+        log('\u2705 Ads criados: ' + d.ads)
+        if (d.errors && d.errors.length > 0) {
+          log('\u274c Erros: ' + d.errors.length)
+          d.errors.forEach((e: any) => log('  \u274c [' + e.step + '] ' + e.error))
+        }
+      } else {
+        log('\u274c Erro: ' + (res.message || res.error || 'Unknown'))
+      }
+    } catch(err: any) {
+      log('\u274c Fatal: ' + err.message)
+    }
+
+    setLaunching(false)
   }
-  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🚀 Launch</h2>
-    <div className="space-y-2 mb-6">{[{ok:true,t:'Conectado'},{ok:selectedAccounts.length>0,t:`${selectedAccounts.length} contas`},{ok:true,t:campaignType},{ok:true,t:'Budget R$50'}].map((c,i)=>
-      <div key={i} className="flex items-center gap-3 py-2 border-b border-hawk-border text-sm"><span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${c.ok?'bg-green-500/15 text-green-400':'bg-yellow-500/15 text-yellow-400'}`}>{c.ok?'✓':'!'}</span>{c.t}</div>)}</div>
-    <div className="flex gap-2 mb-6">{['now','5min','15min','30min'].map(s=><div key={s} className={`chip ${schedule===s?'active':''}`} onClick={()=>setSchedule(s)}>{s==='now'?'⚡ Agora':'+'+s}</div>)}</div>
-    <div className="text-center py-6"><button onClick={launch} disabled={launching||!selectedAccounts.length} className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] transition-all disabled:opacity-50">🚀 LANÇAR</button></div>
-    {logs.length>0&&<div className="mt-4"><div className="h-1.5 bg-hawk-input rounded-full overflow-hidden mb-3"><div className="h-full bg-gradient-to-r from-hawk-accent to-orange-400 rounded-full transition-all" style={{width:`${progress}%`}}/></div>
-    <div className="max-h-[250px] overflow-y-auto p-3 bg-hawk-input rounded-md font-mono text-[11px] leading-[1.8] text-gray-400">{logs.map((l,i)=><div key={i}>{l}</div>)}</div></div>}
-    <div className="flex justify-between mt-6 pt-4 border-t border-hawk-border"><button className="btn btn-secondary" onClick={()=>setStep(5)}>← Proxy</button>{launching&&<button className="btn btn-danger btn-sm">⛔ Parar</button>}</div></div>
+
+  return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">\ud83d\ude80 Launch</h2>
+    <div className="space-y-2 mb-6">
+      {[
+        { ok: true, t: 'Conectado ao TikTok' },
+        { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
+        { ok: true, t: 'Tipo: ' + campaignType },
+        { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
+        { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
+      ].map((c, i) =>
+        <div key={i} className="flex items-center gap-3 py-2 border-b border-hawk-border text-sm">
+          <span className={'w-5 h-5 rounded-full flex items-center justify-center text-xs ' + (c.ok ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400')}>{c.ok ? '\u2713' : '!'}</span>{c.t}
+        </div>
+      )}
+    </div>
+
+    <h4 className="label mb-3">Quando iniciar?</h4>
+    <div className="flex gap-2 mb-6">
+      {['now', '5min', '15min', '30min', '1h'].map(s =>
+        <div key={s} className={'chip ' + (schedule === s ? 'active' : '')} onClick={() => setSchedule(s)}>
+          {s === 'now' ? '\u26a1 Agora' : '+' + s}
+        </div>
+      )}
+    </div>
+
+    <div className="text-center py-6">
+      <button onClick={launch} disabled={launching || !selectedAccounts.length}
+        className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] transition-all disabled:opacity-50">
+        {launching ? '\u23f3 Lançando...' : '\ud83d\ude80 LANÇAR CAMPANHAS'}
+      </button>
+      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — Smart+ Spark Ads</p>
+    </div>
+
+    {logs.length > 0 && <div className="mt-4">
+      <div className="h-1.5 bg-hawk-input rounded-full overflow-hidden mb-3">
+        <div className="h-full bg-gradient-to-r from-hawk-accent to-orange-400 rounded-full transition-all" style={{width: progress + '%'}} />
+      </div>
+      <div className="max-h-[350px] overflow-y-auto p-3 bg-hawk-input rounded-md font-mono text-[11px] leading-[1.8] text-gray-400">
+        {logs.map((l, i) => <div key={i}>{l}</div>)}
+      </div>
+    </div>}
+
+    {result && result.campaigns > 0 && <div className="mt-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+      <div className="text-sm font-bold text-green-400 mb-2">\u2705 Lançamento concluído!</div>
+      <div className="text-xs text-gray-300">
+        {result.campaigns} campanha(s), {result.adgroups} ad group(s), {result.ads} ad(s) criado(s)
+        {result.errors?.length > 0 && <span className="text-yellow-400 ml-2">({result.errors.length} erro(s))</span>}
+      </div>
+    </div>}
+
+    <div className="flex justify-between mt-6 pt-4 border-t border-hawk-border">
+      <button className="btn btn-secondary" onClick={() => setStep(5)}>\u2190 Proxy</button>
+      {launching && <button className="btn btn-danger btn-sm">\u26d4 Parar</button>}
+    </div>
+  </div>
 }
+
 
 function StepFooter({prev,next}:{prev:number;next:number}){const{setStep}=useAppStore();return<div className="flex justify-between mt-6 pt-4 border-t border-hawk-border"><button className="btn btn-secondary" onClick={()=>setStep(prev)}>← Voltar</button><button className="btn btn-primary" onClick={()=>setStep(next)}>Próximo →</button></div>}
 function ToggleRow({title,desc,defaultOn,onChange}:{title:string;desc:string;defaultOn?:boolean;onChange?:(v:boolean)=>void}){const[on,setOn]=useState(defaultOn||false);return<div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-md mb-2"><div><div className="text-sm font-semibold">{title}</div><div className="text-[11px] text-gray-500">{desc}</div></div><div className={`toggle ${on?'on':''}`} onClick={()=>{setOn(!on);onChange?.(!on)}}/></div>}
