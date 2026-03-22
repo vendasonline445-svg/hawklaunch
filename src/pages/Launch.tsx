@@ -72,7 +72,7 @@ function StepAccounts() {
 
   function openInTikTok(ids: string[]) {
     ids.forEach(id => {
-      window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${id}`, '_blank')
+      window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + id + '&is_refresh_page=true`, '_blank')
     })
   }
 
