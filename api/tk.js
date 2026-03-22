@@ -44,14 +44,29 @@ async function tt(endpoint, token, method, body, proxyRaw) {
 }
 
 async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
-  var authRes = await tt('/tt_video/authorize/', token, 'POST', { advertiser_id: advertiserId, auth_code: authCode }, proxyRaw)
-  var identityId = (authRes.data && authRes.data.identity_id) ? authRes.data.identity_id : null
-  if (authRes.code !== 0 || !identityId) return { ok: false, error: authRes.message || 'authorize failed' }
-  var infoEp = '/tt_video/info/?advertiser_id=' + advertiserId + '&auth_code=' + encodeURIComponent(authCode)
-  var infoRes = await tt(infoEp, token, 'GET', null, proxyRaw)
-  var itemId = (infoRes.data && infoRes.data.item_info) ? infoRes.data.item_info.item_id : null
-  if (infoRes.code !== 0 || !itemId) return { ok: false, error: 'info failed: ' + (infoRes.message || ''), identity_id: identityId }
-  return { ok: true, identity_id: identityId, item_id: itemId }
+  var lastError = ''
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) await new Promise(r => setTimeout(r, 2000 * attempt))
+    try {
+      var authRes = await tt('/tt_video/authorize/', token, 'POST', { advertiser_id: advertiserId, auth_code: authCode }, proxyRaw)
+      var identityId = (authRes.data && authRes.data.identity_id) ? authRes.data.identity_id : null
+      if (authRes.code !== 0 || !identityId) {
+        lastError = authRes.message || 'authorize failed'
+        continue
+      }
+      var infoEp = '/tt_video/info/?advertiser_id=' + advertiserId + '&auth_code=' + encodeURIComponent(authCode)
+      var infoRes = await tt(infoEp, token, 'GET', null, proxyRaw)
+      var itemId = (infoRes.data && infoRes.data.item_info) ? infoRes.data.item_info.item_id : null
+      if (infoRes.code !== 0 || !itemId) {
+        lastError = 'info failed: ' + (infoRes.message || '')
+        continue
+      }
+      return { ok: true, identity_id: identityId, item_id: itemId, attempt: attempt }
+    } catch(e) {
+      lastError = e.message
+    }
+  }
+  return { ok: false, error: lastError + ' (3 tentativas)' }
 }
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
