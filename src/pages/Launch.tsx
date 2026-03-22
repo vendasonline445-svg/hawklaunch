@@ -552,40 +552,7 @@ function StepLaunch() {
       if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
       selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
 
-      const res = { code: 0, data: totalResult }
-
-      if (res.code === 0 && res.data) {
-        const d = res.data
-        setResult(d)
-
-        if (d.logs) {
-          d.logs.forEach((l: any, idx: number) => {
-            const pct = 15 + ((idx / d.logs.length) * 80)
-            setProgress(Math.round(pct))
-            const isError = l.message.includes('error') || l.message.includes('Error') || l.message.includes('❌')
-            const isOk = l.message.includes('created') || l.message.includes('Created') || l.message.includes('✅')
-            const isWarn = l.message.includes('⚠')
-            addLog(isError ? 'ERROR' : isOk ? 'OK' : isWarn ? 'WARN' : 'INFO', l.message)
-          })
-        }
-
-        setProgress(100)
-        addLog('OK', '✅ ' + selectedAccounts.length + '/' + selectedAccounts.length + ' conta(s) processada(s)')
-        addLog('OK', 'MISSÃO COMPLETA! ' + d.campaigns + ' campanha(s), ' + d.adgroups + ' grupo(s), ' + d.ads + ' ad(s) criado(s).')
-
-        if (d.errors && d.errors.length > 0) {
-          d.errors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + (e.error || 'Unknown error')))
-        }
-
-        // List accounts with campaigns
-        addLog('INFO', 'Contas com campanhas criadas (' + d.campaigns + '):')
-        selectedAccounts.forEach((acc: any) => {
-          addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id) + ' [ID: ' + acc.advertiser_id + ']')
-        })
-      } else {
-        addLog('ERROR', 'API Error: ' + (res.message || res.error || 'Unknown'))
-      }
-    } catch(err: any) {
+      setResult(totalResult)
       addLog('ERROR', 'Fatal: ' + err.message)
     }
 
