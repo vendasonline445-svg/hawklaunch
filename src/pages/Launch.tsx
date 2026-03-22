@@ -393,7 +393,7 @@ function StepStructure() {
 
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div>
-      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="ON_WEB_ORDER">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="SHOPPING">Shopping</option><option value="CLICK_LANDING_PAGE">Landing Page View</option></select></div>
+      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SUCCESSORDER_PAY">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="SHOPPING_CART">Add to Cart (Shopping)</option><option value="CLICK_LANDING_PAGE">Landing Page View</option></select></div>
     </div>
 
     <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4"><span className="text-base">💡</span><div className="text-[12px] text-gray-300">Smart+ usa orçamento automático no nível da campanha. Estrutura: <strong>1 campanha → 1 ad group → N ads</strong> por conta.</div></div>
@@ -502,7 +502,7 @@ function StepLaunch() {
         call_to_action_list: ctas,
         budget: budget,
         target_cpa: targetCpa || undefined,
-        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SUCCESSORDER_PAY',
         location_ids: ['3469034'],
         schedule_start: scheduleStart,
       }
