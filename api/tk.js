@@ -197,8 +197,15 @@ export default async function handler(req, res) {
       return res.json(await r.json())
     }
 
+    if (action === 'regions') {
+      var advId = req.query.advertiser_id
+      var d = await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=CONVERSIONS', token)
+      return res.json(d)
+    }
     res.status(400).json({ error: 'Unknown action', action: action })
   } catch(err) {
     res.status(500).json({ error: err.message })
   }
 }
+
+// Standalone region lookup - can call via: /api/tk?a=regions&advertiser_id=X
