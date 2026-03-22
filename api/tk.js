@@ -218,7 +218,7 @@ export default async function handler(req, res) {
     if (action === 'pixel_events') {
       var advId = req.query.advertiser_id
       var pixelId = req.query.pixel_id
-      var d = await tt('/pixel/track/get/?advertiser_id=' + advId + '&pixel_id=' + pixelId, token)
+      var d = await tt('/pixel/content/get/?advertiser_id=' + advId + '&pixel_id=' + pixelId, token)
       return res.json(d)
     }
     if (action === 'regions') {
