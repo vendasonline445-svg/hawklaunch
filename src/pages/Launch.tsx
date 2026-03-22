@@ -392,6 +392,7 @@ function StepStructure() {
     </div>
 
     <div className="grid grid-cols-2 gap-4 mb-4">
+      <div><label className="label mb-1.5 block">Campanhas por conta</label><input className="input" type="number" defaultValue={5} min={1} max={20} onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)}/></div>
       <div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div>
       <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="ON_WEB_CART">Add to Cart</option><option value="ADD_BILLING">Add Payment Info</option></select></div>
     </div>
@@ -496,6 +497,8 @@ function StepLaunch() {
         adgroup_name: 'AG ' + offerName + ' ' + new Date().toLocaleDateString('pt-BR'),
         ad_name: offerName,
         spark_codes: sparkCodes,
+        rotation: true,
+        campaigns_per_account: parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5'),
         ads_per_code: adsPerCode,
         landing_page_url: destUrl,
         ad_texts: adTexts,
