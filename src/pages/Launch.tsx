@@ -552,6 +552,7 @@ function StepLaunch() {
       if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
       selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
 
+    } catch(err: any) {
       setResult(totalResult)
       addLog('ERROR', 'Fatal: ' + err.message)
     }
