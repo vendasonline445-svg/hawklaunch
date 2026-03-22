@@ -18,10 +18,21 @@ async function tt(endpoint, token, method, body) {
 }
 
 async function authorizeSpark(token, advertiserId, authCode) {
-  return await tt('/tt_video/authorize/', token, 'POST', {
+  // Step 1: Authorize the spark code for this advertiser
+  var authRes = await tt('/tt_video/authorize/', token, 'POST', {
     advertiser_id: advertiserId,
     auth_code: authCode
   })
+  var identityId = (authRes.data && authRes.data.identity_id) ? authRes.data.identity_id : null
+  if (authRes.code !== 0 || !identityId) return { ok: false, error: authRes.message || 'authorize failed', raw: authRes }
+
+  // Step 2: Get video/item info to retrieve tiktok_item_id
+  var infoEp = '/tt_video/info/?advertiser_id=' + advertiserId + '&auth_code=' + encodeURIComponent(authCode)
+  var infoRes = await tt(infoEp, token)
+  var itemId = (infoRes.data && infoRes.data.item_info) ? infoRes.data.item_info.item_id : null
+  if (infoRes.code !== 0 || !itemId) return { ok: false, error: 'info failed: ' + (infoRes.message || ''), identity_id: identityId, raw: infoRes }
+
+  return { ok: true, identity_id: identityId, item_id: itemId, video_id: (infoRes.data.video_info && infoRes.data.video_info.video_id) || null }
 }
 
 export default async function handler(req, res) {
@@ -98,33 +109,15 @@ export default async function handler(req, res) {
 
     if (action === 'spark_authorize' && req.method === 'POST') {
       var body = req.body || {}
-      if (!body.advertiser_id || !body.auth_code) {
-        return res.status(400).json({ error: 'advertiser_id and auth_code required' })
-      }
+      if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'advertiser_id and auth_code required' })
       return res.json(await authorizeSpark(token, body.advertiser_id, body.auth_code))
     }
 
-    // ============ DEBUG: test ad create with full response ============
     if (action === 'spark_info' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'need advertiser_id + auth_code' })
       var ep = '/tt_video/info/?advertiser_id=' + body.advertiser_id + '&auth_code=' + encodeURIComponent(body.auth_code)
       return res.json(await tt(ep, token))
-    }
-
-    if (action === 'tt_proxy') {
-      var ep = req.query.ep
-      if (!ep) return res.status(400).json({ error: 'ep required' })
-      if (req.method === 'POST') {
-        return res.json(await tt(ep, token, 'POST', req.body))
-      }
-      return res.json(await tt(ep, token))
-    }
-
-    if (action === 'test_ad' && req.method === 'POST') {
-      var body = req.body || {}
-      var adRes = await tt('/ad/create/', token, 'POST', body)
-      return res.json({ sent: body, response: adRes })
     }
 
     // ============ FULL SMART+ LAUNCH ============
@@ -134,7 +127,7 @@ export default async function handler(req, res) {
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
 
-      // STEP 0: Pre-authorize all Spark Codes
+      // STEP 0: Authorize + get item_id for all spark codes × all accounts
       for (var i = 0; i < body.accounts.length; i++) {
         var acc = body.accounts[i]
         var advId = acc.advertiser_id
@@ -142,21 +135,21 @@ export default async function handler(req, res) {
 
         for (var s = 0; s < sparkCodes.length; s++) {
           var code = sparkCodes[s]
-          results.logs.push({ account: advId, message: 'Authorizing Spark ' + (s+1) + '/' + sparkCodes.length + '...', time: new Date().toISOString() })
+          results.logs.push({ account: advId, message: 'Spark ' + (s+1) + '/' + sparkCodes.length + ': authorize + info...', time: new Date().toISOString() })
 
           try {
-            var authRes = await authorizeSpark(token, advId, code)
-            results.logs.push({ account: advId, message: 'AUTH RAW: ' + JSON.stringify(authRes), time: new Date().toISOString() })
-
-            if (authRes.code === 0 && authRes.data) {
-              sparkAuthCache[advId][code] = authRes.data
+            var sparkResult = await authorizeSpark(token, advId, code)
+            if (sparkResult.ok) {
+              sparkAuthCache[advId][code] = sparkResult
+              results.logs.push({ account: advId, message: '✅ identity=' + sparkResult.identity_id + ' item=' + sparkResult.item_id, time: new Date().toISOString() })
               results.spark_authorized++
             } else {
-              results.errors.push({ account: advId, step: 'spark_auth', code: code.substring(0,20), error: authRes.message })
+              results.logs.push({ account: advId, message: '⚠️ ' + sparkResult.error, time: new Date().toISOString() })
+              results.errors.push({ account: advId, step: 'spark', code: code.substring(0,20), error: sparkResult.error })
             }
           } catch(e) {
-            results.logs.push({ account: advId, message: '❌ Spark error: ' + e.message, time: new Date().toISOString() })
-            results.errors.push({ account: advId, step: 'spark_auth', code: code.substring(0,20), error: e.message })
+            results.logs.push({ account: advId, message: '❌ ' + e.message, time: new Date().toISOString() })
+            results.errors.push({ account: advId, step: 'spark', code: code.substring(0,20), error: e.message })
           }
         }
       }
@@ -168,6 +161,7 @@ export default async function handler(req, res) {
         var accountSparks = sparkAuthCache[advId] || {}
 
         try {
+          // CAMPAIGN
           var campaignPayload = {
             advertiser_id: advId,
             campaign_name: (body.campaign_name || 'HL') + ' ' + (i+1) + '-' + Date.now().toString().slice(-4),
@@ -177,8 +171,7 @@ export default async function handler(req, res) {
             campaign_type: 'REGULAR_CAMPAIGN',
             smart_performance_campaign: true,
           }
-          results.logs.push({ account: advId, message: 'Creating campaign: ' + campaignPayload.campaign_name, time: new Date().toISOString() })
-
+          results.logs.push({ account: advId, message: 'Campaign: ' + campaignPayload.campaign_name, time: new Date().toISOString() })
           var campRes = await tt('/campaign/create/', token, 'POST', campaignPayload)
           if (campRes.code !== 0) {
             results.logs.push({ account: advId, message: '❌ Campaign: ' + campRes.message, time: new Date().toISOString() })
@@ -188,18 +181,18 @@ export default async function handler(req, res) {
           results.logs.push({ account: advId, message: '✅ Campaign: ' + campaignId, time: new Date().toISOString() })
           results.campaigns++
 
+          // PIXEL
           var pixelId = body.pixel_id || null
           if (!pixelId) {
-            try {
-              var pixelRes = await tt('/pixel/list/?advertiser_id=' + advId, token)
-              if (pixelRes.data && pixelRes.data.pixels && pixelRes.data.pixels.length > 0) {
-                pixelId = pixelRes.data.pixels[0].pixel_id
-              } else {
-                results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue
-              }
-            } catch(e) { continue }
+            var pixelRes = await tt('/pixel/list/?advertiser_id=' + advId, token)
+            if (pixelRes.data && pixelRes.data.pixels && pixelRes.data.pixels.length > 0) {
+              pixelId = pixelRes.data.pixels[0].pixel_id
+            } else {
+              results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue
+            }
           }
 
+          // ADGROUP
           var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var bidValue = parseFloat(body.target_cpa) || parseFloat(body.budget) || 50
           var agRes = await tt('/adgroup/create/', token, 'POST', {
@@ -223,14 +216,12 @@ export default async function handler(req, res) {
           results.logs.push({ account: advId, message: '✅ AdGroup: ' + adgroupId, time: new Date().toISOString() })
           results.adgroups++
 
+          // ADS
           var adsPerCode = body.ads_per_code || 1
           for (var c = 0; c < sparkCodes.length; c++) {
             var code = sparkCodes[c]
-            var sparkData = accountSparks[code]
-            if (!sparkData) {
-              results.logs.push({ account: advId, message: '⚠️ Spark ' + (c+1) + ' skip', time: new Date().toISOString() })
-              continue
-            }
+            var sd = accountSparks[code]
+            if (!sd || !sd.ok) { continue }
 
             for (var a = 0; a < adsPerCode; a++) {
               var adPayload = {
@@ -239,7 +230,8 @@ export default async function handler(req, res) {
                 creatives: [{
                   ad_name: (body.ad_name || 'Ad') + ' ' + (c+1) + '-' + (a+1) + ' ' + Date.now().toString().slice(-4),
                   identity_type: 'AUTH_CODE',
-                  identity_id: sparkData.identity_id || code,
+                  identity_id: sd.identity_id,
+                  tiktok_item_id: sd.item_id,
                   creative_authorized: true,
                   ad_format: 'SINGLE_VIDEO',
                   landing_page_url: body.landing_page_url || '',
@@ -247,19 +239,14 @@ export default async function handler(req, res) {
                   call_to_action: body.call_to_action || 'SHOP_NOW',
                 }]
               }
-              if (sparkData.tiktok_item_id) adPayload.creatives[0].tiktok_item_id = sparkData.tiktok_item_id
-
-              results.logs.push({ account: advId, message: 'AD PAYLOAD: ' + JSON.stringify(adPayload), time: new Date().toISOString() })
 
               var adRes = await tt('/ad/create/', token, 'POST', adPayload)
-
-              results.logs.push({ account: advId, message: 'AD RESPONSE: ' + JSON.stringify(adRes), time: new Date().toISOString() })
-
               if (adRes.code !== 0) {
-                results.errors.push({ account: advId, step: 'ad', code: code.substring(0,20), error: adRes.message })
+                results.logs.push({ account: advId, message: '❌ Ad ' + (c+1) + '-' + (a+1) + ': ' + adRes.message, time: new Date().toISOString() })
+                results.errors.push({ account: advId, step: 'ad', error: adRes.message })
               } else {
-                var adId = (adRes.data && adRes.data.ad_ids) ? adRes.data.ad_ids[0] : (adRes.data && adRes.data.ad_id) || '?'
-                results.logs.push({ account: advId, message: '✅ Ad: ' + adId, time: new Date().toISOString() })
+                var adId = (adRes.data && adRes.data.ad_ids) ? adRes.data.ad_ids[0] : '?'
+                results.logs.push({ account: advId, message: '✅ Ad ' + (c+1) + '-' + (a+1) + ': ' + adId, time: new Date().toISOString() })
                 results.ads++
               }
             }
