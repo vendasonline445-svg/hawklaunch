@@ -105,6 +105,13 @@ export default async function handler(req, res) {
     }
 
     // ============ DEBUG: test ad create with full response ============
+    if (action === 'spark_info' && req.method === 'POST') {
+      var body = req.body || {}
+      if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'need advertiser_id + auth_code' })
+      var ep = '/tt_video/info/?advertiser_id=' + body.advertiser_id + '&auth_code=' + encodeURIComponent(body.auth_code)
+      return res.json(await tt(ep, token))
+    }
+
     if (action === 'tt_proxy') {
       var ep = req.query.ep
       if (!ep) return res.status(400).json({ error: 'ep required' })
