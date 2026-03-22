@@ -513,7 +513,45 @@ function StepLaunch() {
       addLog('DEBUG', 'Payload montado, enviando...')
       setProgress(15)
 
-      const res = await api.launchSmart(payload)
+      // Per-campaign loop with delays
+      const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')
+      let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+      let allLogs: any[] = []
+      let allErrors: any[] = []
+      const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+
+      for (let ai = 0; ai < selectedAccounts.length; ai++) {
+        const acc = selectedAccounts[ai]
+        addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (ai > 0) { addLog('INFO', '⏳ Delay entre contas...'); await rndWait(4000, 8000) }
+
+        for (let cp = 0; cp < campsPerAcc; cp++) {
+          if (cp > 0) { addLog('DEBUG', '⏳ Delay...'); await rndWait(2000, 5000) }
+          setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
+
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: (payload.start_seq || 1) + (ai * campsPerAcc) + cp }
+          try {
+            const r = await api.launchSmart(singlePayload)
+            if (r.code === 0 && r.data) {
+              totalResult.campaigns += r.data.campaigns || 0
+              totalResult.adgroups += r.data.adgroups || 0
+              totalResult.ads += r.data.ads || 0
+              if (r.data.logs) r.data.logs.forEach((l: any) => {
+                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
+                addLog(cat, l.message)
+              })
+              if (r.data.errors) allErrors.push(...r.data.errors)
+            } else { addLog('ERROR', 'API: ' + (r.message || r.error || '?')) }
+          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+        }
+      }
+
+      setProgress(100)
+      addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
+      if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
+      selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
+
+      const res = { code: 0, data: totalResult }
 
       if (res.code === 0 && res.data) {
         const d = res.data
