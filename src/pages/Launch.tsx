@@ -436,7 +436,7 @@ function StepLaunch() {
         budget: budget,
         target_cpa: targetCpa || undefined,
         optimization_event: 'ON_WEB_ORDER',
-        location_ids: ['2076'],
+        location_ids: ['3469034'],
         schedule_start: scheduleStart,
       }
 
