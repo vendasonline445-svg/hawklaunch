@@ -251,17 +251,14 @@ export default async function handler(req, res) {
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) continue
-            var adsPerCode = body.ads_per_code || 2
-            for (var a = 0; a < adsPerCode; a++) {
-              creativeList.push({
-                creative_info: {
-                  ad_format: 'SINGLE_VIDEO',
-                  tiktok_item_id: sd.item_id,
-                  identity_type: 'AUTH_CODE',
-                  identity_id: sd.identity_id,
-                }
-              })
-            }
+            creativeList.push({
+              creative_info: {
+                ad_format: 'SINGLE_VIDEO',
+                tiktok_item_id: sd.item_id,
+                identity_type: 'AUTH_CODE',
+                identity_id: sd.identity_id,
+              }
+            })
           }
           if (creativeList.length === 0) { L(advId, '⚠️ No creatives'); continue }
 
