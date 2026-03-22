@@ -145,7 +145,7 @@ export default async function handler(req, res) {
             promotion_type: 'WEBSITE', optimization_goal: 'CONVERT',
             optimization_event: body.optimization_event || 'ON_WEB_ORDER',
             billing_event: 'OCPM',
-            bid_type: body.target_cpa ? 'BID_TYPE_CUSTOM' : 'BID_TYPE_NO_BID',
+            bid_type: 'BID_TYPE_CUSTOM',
             budget_mode: 'BUDGET_MODE_DAY',
             budget: body.budget || 80,
             schedule_type: 'SCHEDULE_FROM_NOW',
@@ -154,7 +154,7 @@ export default async function handler(req, res) {
             pacing: 'PACING_MODE_SMOOTH',
           }
           adgroupPayload.pixel_id = pixelId
-          if (body.target_cpa) adgroupPayload.bid = body.target_cpa
+          if (body.target_cpa) adgroupPayload.bid = parseFloat(body.target_cpa)
 
           var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
           if (agRes.code !== 0) { log('AdGroup error: ' + agRes.message); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
