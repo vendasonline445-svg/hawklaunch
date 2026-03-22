@@ -17,6 +17,13 @@ async function tt(endpoint, token, method, body) {
   return r.json()
 }
 
+async function authorizeSpark(token, advertiserId, authCode) {
+  return await tt('/tt_video/authorize/', token, 'POST', {
+    advertiser_id: advertiserId,
+    auth_code: authCode
+  })
+}
+
 export default async function handler(req, res) {
   try {
     var action = req.query.a
@@ -89,114 +96,156 @@ export default async function handler(req, res) {
       return res.json(await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
+    // ============ STANDALONE SPARK AUTHORIZE (test) ============
+    if (action === 'spark_authorize' && req.method === 'POST') {
+      var body = req.body || {}
+      if (!body.advertiser_id || !body.auth_code) {
+        return res.status(400).json({ error: 'advertiser_id and auth_code required' })
+      }
+      return res.json(await authorizeSpark(token, body.advertiser_id, body.auth_code))
+    }
+
     // ============ FULL SMART+ LAUNCH ============
     if (action === 'launch_smart' && req.method === 'POST') {
       var body = req.body
-      var results = { campaigns: 0, adgroups: 0, ads: 0, errors: [], logs: [] }
+      var results = { campaigns: 0, adgroups: 0, ads: 0, spark_authorized: 0, errors: [], logs: [] }
+      var sparkCodes = body.spark_codes || []
+      var sparkAuthCache = {}
 
+      // STEP 0: Pre-authorize all Spark Codes for all accounts
       for (var i = 0; i < body.accounts.length; i++) {
         var acc = body.accounts[i]
         var advId = acc.advertiser_id
-        var log = function(msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
+        sparkAuthCache[advId] = {}
+
+        for (var s = 0; s < sparkCodes.length; s++) {
+          var code = sparkCodes[s]
+          results.logs.push({ account: advId, message: 'Authorizing Spark Code ' + (s+1) + '/' + sparkCodes.length + '...', time: new Date().toISOString() })
+
+          try {
+            var authRes = await authorizeSpark(token, advId, code)
+            if (authRes.data && authRes.data.tiktok_item_id) {
+              sparkAuthCache[advId][code] = authRes.data.tiktok_item_id
+              results.logs.push({ account: advId, message: '✅ Spark authorized → item_id: ' + authRes.data.tiktok_item_id, time: new Date().toISOString() })
+              results.spark_authorized++
+            } else {
+              var errMsg = authRes.message || JSON.stringify(authRes)
+              results.logs.push({ account: advId, message: '⚠️ Spark auth: ' + errMsg + ' (code:' + authRes.code + ')', time: new Date().toISOString() })
+              results.errors.push({ account: advId, step: 'spark_auth', code: code.substring(0,20), error: errMsg })
+            }
+          } catch(e) {
+            results.logs.push({ account: advId, message: '❌ Spark auth error: ' + e.message, time: new Date().toISOString() })
+            results.errors.push({ account: advId, step: 'spark_auth', code: code.substring(0,20), error: e.message })
+          }
+        }
+      }
+
+      // STEP 1-3: Campaign → AdGroup → Ads
+      for (var i = 0; i < body.accounts.length; i++) {
+        var acc = body.accounts[i]
+        var advId = acc.advertiser_id
+        var accountSparks = sparkAuthCache[advId] || {}
 
         try {
-          // 1. CREATE CAMPAIGN
-          log('Campaign payload: ' + JSON.stringify(campaignPayload))
+          // 1. CAMPAIGN
           var campaignPayload = {
             advertiser_id: advId,
-            campaign_name: body.campaign_name + ' ' + (i+1) + '-' + Date.now().toString().slice(-4) || ('HL ' + new Date().toLocaleDateString('pt-BR') + ' ' + (i+1)),
+            campaign_name: (body.campaign_name || 'HL') + ' ' + (i+1) + '-' + Date.now().toString().slice(-4),
             objective_type: 'CONVERSIONS',
             budget_mode: 'BUDGET_MODE_DAY',
             budget: body.budget || 80,
             campaign_type: 'REGULAR_CAMPAIGN',
             smart_performance_campaign: true,
           }
+          results.logs.push({ account: advId, message: 'Creating campaign: ' + campaignPayload.campaign_name, time: new Date().toISOString() })
+
           var campRes = await tt('/campaign/create/', token, 'POST', campaignPayload)
-          if (campRes.code !== 0) { log('Campaign FULL error: ' + JSON.stringify(campRes)); results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue }
+          if (campRes.code !== 0) {
+            results.logs.push({ account: advId, message: '❌ Campaign error: ' + campRes.message, time: new Date().toISOString() })
+            results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue
+          }
           var campaignId = campRes.data.campaign_id
-          log('Campaign created: ' + campaignId)
+          results.logs.push({ account: advId, message: '✅ Campaign: ' + campaignId, time: new Date().toISOString() })
           results.campaigns++
 
-          // 2. CREATE AD GROUP
-          // Auto-fetch pixel for this account
+          // 2. PIXEL + ADGROUP
           var pixelId = body.pixel_id || null
-          log('Pixel from config: ' + (pixelId || 'auto-detect'))
           if (!pixelId) {
             try {
               var pixelRes = await tt('/pixel/list/?advertiser_id=' + advId, token)
               if (pixelRes.data && pixelRes.data.pixels && pixelRes.data.pixels.length > 0) {
                 pixelId = pixelRes.data.pixels[0].pixel_id
-                log('Pixel found: ' + pixelId + ' (' + pixelRes.data.pixels[0].pixel_name + ')')
+                results.logs.push({ account: advId, message: 'Pixel: ' + pixelId, time: new Date().toISOString() })
               } else {
-                log('No pixel found for account ' + advId)
-                results.errors.push({ account: advId, step: 'pixel', error: 'No pixel found' })
-                continue
+                results.logs.push({ account: advId, message: '⚠️ No pixel found', time: new Date().toISOString() })
+                results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue
               }
-            } catch(e) {
-              log('Pixel fetch error: ' + e.message)
-            }
+            } catch(e) { continue }
           }
-          log('AdGroup payload: ' + JSON.stringify(adgroupPayload))
+
           var scheduleStart = body.schedule_start || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+          var bidValue = parseFloat(body.target_cpa) || parseFloat(body.budget) || 50
           var adgroupPayload = {
-            advertiser_id: advId,
-            campaign_id: campaignId,
+            advertiser_id: advId, campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + new Date().toLocaleDateString('pt-BR')),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
             promotion_type: 'WEBSITE', optimization_goal: 'CONVERT',
             optimization_event: body.optimization_event || 'ON_WEB_ORDER',
-            billing_event: 'OCPM',
-            bid_type: 'BID_TYPE_CUSTOM',
-            budget_mode: 'BUDGET_MODE_DAY',
-            budget: body.budget || 80,
-            schedule_type: 'SCHEDULE_FROM_NOW',
-            schedule_start_time: scheduleStart,
+            billing_event: 'OCPM', bid_type: 'BID_TYPE_CUSTOM',
+            budget_mode: 'BUDGET_MODE_DAY', budget: body.budget || 80,
+            schedule_type: 'SCHEDULE_FROM_NOW', schedule_start_time: scheduleStart,
             location_ids: body.location_ids || ['3469034'],
-            pacing: 'PACING_MODE_SMOOTH',
+            pacing: 'PACING_MODE_SMOOTH', pixel_id: pixelId,
+            bid: bidValue, conversion_bid_price: bidValue,
           }
-          adgroupPayload.pixel_id = pixelId
-          var bidValue = parseFloat(body.target_cpa) || parseFloat(body.budget) || 50; adgroupPayload.bid = bidValue; adgroupPayload.conversion_bid_price = bidValue
 
           var agRes = await tt('/adgroup/create/', token, 'POST', adgroupPayload)
-          if (agRes.code !== 0) { log('AdGroup FULL error: ' + JSON.stringify(agRes)); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
+          if (agRes.code !== 0) {
+            results.logs.push({ account: advId, message: '❌ AdGroup error: ' + agRes.message, time: new Date().toISOString() })
+            results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue
+          }
           var adgroupId = agRes.data.adgroup_id
-          log('AdGroup created: ' + adgroupId)
+          results.logs.push({ account: advId, message: '✅ AdGroup: ' + adgroupId, time: new Date().toISOString() })
           results.adgroups++
 
-          // 3. CREATE ADS (one per spark code x ads_per_code)
-          var sparkCodes = body.spark_codes || []
+          // 3. ADS with authorized tiktok_item_ids
           var adsPerCode = body.ads_per_code || 1
-
           for (var c = 0; c < sparkCodes.length; c++) {
+            var code = sparkCodes[c]
+            var itemId = accountSparks[code]
+            if (!itemId) {
+              results.logs.push({ account: advId, message: '⚠️ Spark ' + (c+1) + ' not authorized, skip', time: new Date().toISOString() })
+              continue
+            }
             for (var a = 0; a < adsPerCode; a++) {
-              log('Ad payload: ' + JSON.stringify(adPayload))
               var adPayload = {
-                advertiser_id: advId,
-                adgroup_id: adgroupId,
+                advertiser_id: advId, adgroup_id: adgroupId,
                 creatives: [{
-                  ad_name: body.ad_name || ('Ad ' + new Date().toLocaleDateString('pt-BR') + ' ' + (c+1) + '-' + (a+1)),
+                  ad_name: (body.ad_name || 'Ad') + ' ' + (c+1) + '-' + (a+1) + ' ' + Date.now().toString().slice(-4),
                   identity_type: 'AUTH_CODE',
-                  identity_id: sparkCodes[c],
+                  identity_id: code,
+                  tiktok_item_id: itemId,
                   creative_authorized: true,
                   ad_format: 'SINGLE_VIDEO',
                   landing_page_url: body.landing_page_url || '',
-                  ad_text: body.ad_texts && body.ad_texts[0] ? body.ad_texts[0] : 'Shop now',
+                  ad_text: body.ad_texts && body.ad_texts[a % body.ad_texts.length] ? body.ad_texts[a % body.ad_texts.length] : 'Shop now',
                   call_to_action: body.call_to_action || 'SHOP_NOW',
                 }]
               }
-
+              results.logs.push({ account: advId, message: 'Creating ad ' + (c+1) + '-' + (a+1) + ' item=' + itemId, time: new Date().toISOString() })
               var adRes = await tt('/ad/create/', token, 'POST', adPayload)
               if (adRes.code !== 0) {
-                log('Ad FULL error: ' + JSON.stringify(adRes))
-                results.errors.push({ account: advId, step: 'ad', code: sparkCodes[c].substring(0,20), error: adRes.message })
+                results.logs.push({ account: advId, message: '❌ Ad error: ' + (adRes.message || JSON.stringify(adRes)), time: new Date().toISOString() })
+                results.errors.push({ account: advId, step: 'ad', code: code.substring(0,20), error: adRes.message })
               } else {
-                log('Ad created: ' + adRes.data.ad_id)
+                var adId = (adRes.data && adRes.data.ad_ids) ? adRes.data.ad_ids[0] : (adRes.data && adRes.data.ad_id) || '?'
+                results.logs.push({ account: advId, message: '✅ Ad created: ' + adId, time: new Date().toISOString() })
                 results.ads++
               }
             }
           }
         } catch(err) {
-          log('Fatal error: ' + err.message)
+          results.logs.push({ account: advId, message: '❌ Fatal: ' + err.message, time: new Date().toISOString() })
           results.errors.push({ account: advId, step: 'fatal', error: err.message })
         }
       }
@@ -219,10 +268,9 @@ export default async function handler(req, res) {
       var d = await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=CONVERSIONS', token)
       return res.json(d)
     }
+
     res.status(400).json({ error: 'Unknown action', action: action })
   } catch(err) {
     res.status(500).json({ error: err.message })
   }
 }
-
-// Standalone region lookup - can call via: /api/tk?a=regions&advertiser_id=X
