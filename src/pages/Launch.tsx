@@ -502,7 +502,7 @@ function StepLaunch() {
         call_to_action_list: ctas,
         budget: budget,
         target_cpa: targetCpa || undefined,
-        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'ON_WEB_ORDER',
+        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: ['3469034'],
         schedule_start: scheduleStart,
       }
