@@ -339,15 +339,82 @@ function StepCreative() {
 
 /* ====== STEPS 3-6 ====== */
 function StepStructure() {
+  const { selectedAccounts } = useAppStore()
   const [name, setName] = useState(() => localStorage.getItem('hawklaunch_offer_name') || '')
+  const [pixels, setPixels] = useState<any[]>([])
+  const [loadingPixels, setLoadingPixels] = useState(false)
+  const [selectedPixel, setSelectedPixel] = useState(() => localStorage.getItem('hawklaunch_pixel_id') || '')
+
+  function loadPixels() {
+    if (!selectedAccounts[0]) return
+    setLoadingPixels(true)
+    api.getPixels(selectedAccounts[0].advertiser_id)
+      .then((res: any) => {
+        const list = res.data?.pixels || []
+        setPixels(list)
+        if (list.length > 0 && !selectedPixel) {
+          setSelectedPixel(list[0].pixel_id)
+          localStorage.setItem('hawklaunch_pixel_id', list[0].pixel_id)
+        }
+      })
+      .finally(() => setLoadingPixels(false))
+  }
+
   return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🏗️ Structure</h2>
-    <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div><div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="ON_WEB_ORDER">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="SHOPPING">Shopping</option><option value="CLICK_LANDING_PAGE">Landing Page View</option></select></div></div>
+
+    {/* Pixel selector */}
+    <div className="card-sm bg-hawk-input mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-bold">📡 Data Connection (Pixel)</h4>
+        <button className="btn btn-secondary btn-sm" onClick={loadPixels}>{loadingPixels ? '⏳' : '📥 Carregar Pixels'}</button>
+      </div>
+      {pixels.length > 0 ? (
+        <div className="space-y-2">
+          {pixels.map((p: any) => (
+            <div key={p.pixel_id} onClick={() => { setSelectedPixel(p.pixel_id); localStorage.setItem('hawklaunch_pixel_id', p.pixel_id) }}
+              className={'flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors border ' + (selectedPixel === p.pixel_id ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500')}>
+              <div className={'w-5 h-5 border-2 rounded-full flex items-center justify-center text-xs flex-shrink-0 ' + (selectedPixel === p.pixel_id ? 'bg-hawk-accent border-hawk-accent text-white' : 'border-hawk-border')}>
+                {selectedPixel === p.pixel_id ? '✓' : ''}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-semibold">{p.pixel_name || 'Pixel'}</div>
+                <div className="text-[11px] text-gray-500 font-mono">{p.pixel_id}</div>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400">Ativo</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-4 text-gray-500 text-sm">
+          {selectedPixel ? <span className="text-green-400 text-xs">✓ Pixel selecionado: {selectedPixel}</span> : 'Clique em "Carregar Pixels" para selecionar'}
+        </div>
+      )}
+    </div>
+
+    <div className="grid grid-cols-2 gap-4 mb-4">
+      <div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={2} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div>
+      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="ON_WEB_ORDER">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="SHOPPING">Shopping</option><option value="CLICK_LANDING_PAGE">Landing Page View</option></select></div>
+    </div>
+
     <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4"><span className="text-base">💡</span><div className="text-[12px] text-gray-300">Smart+ usa orçamento automático no nível da campanha. Estrutura: <strong>1 campanha → 1 ad group → N ads</strong> por conta.</div></div>
-    <div className="grid grid-cols-2 gap-4 mb-4"><div><label className="label mb-1.5 block">Budget diário (BRL)</label><input className="input" type="number" defaultValue={80} onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)}/></div><div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div></div>
+
+    <div className="grid grid-cols-2 gap-4 mb-4">
+      <div><label className="label mb-1.5 block">Budget diário (BRL)</label><input className="input" type="number" defaultValue={80} onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)}/></div>
+      <div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div>
+    </div>
+
     <ToggleRow title="Randomizar orçamento" desc="Valor aleatório"/>
-    <div className="mt-4 pt-4 border-t border-hawk-border"><div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">Oferta</label><input className="input" value={name} onChange={e=>{setName(e.target.value);localStorage.setItem('hawklaunch_offer_name',e.target.value)}} placeholder="CREME FACIAL"/></div><div><label className="label mb-1.5 block">Seq.</label><input className="input" type="number" defaultValue={1}/></div></div>
-    <div className="mt-2 px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">{name||'OFERTA'} 01</div></div>
-    <StepFooter prev={2} next={4}/></div>
+
+    <div className="mt-4 pt-4 border-t border-hawk-border">
+      <div className="grid grid-cols-2 gap-4">
+        <div><label className="label mb-1.5 block">Oferta</label><input className="input" value={name} onChange={e=>{setName(e.target.value);localStorage.setItem('hawklaunch_offer_name',e.target.value)}} placeholder="CREME FACIAL"/></div>
+        <div><label className="label mb-1.5 block">Seq.</label><input className="input" type="number" defaultValue={1}/></div>
+      </div>
+      <div className="mt-2 px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">{name||'OFERTA'} 01</div>
+    </div>
+
+    <StepFooter prev={2} next={4}/>
+  </div>
 }
 function StepTargeting() {
   const [auto, setAuto] = useState(true)
@@ -435,7 +502,7 @@ function StepLaunch() {
         call_to_action_list: ctas,
         budget: budget,
         target_cpa: targetCpa || undefined,
-        optimization_event: 'ON_WEB_ORDER',
+        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'ON_WEB_ORDER',
         location_ids: ['3469034'],
         schedule_start: scheduleStart,
       }

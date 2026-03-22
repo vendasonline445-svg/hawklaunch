@@ -120,6 +120,7 @@ export default async function handler(req, res) {
           // 2. CREATE AD GROUP
           // Auto-fetch pixel for this account
           var pixelId = body.pixel_id || null
+          log('Pixel from config: ' + (pixelId || 'auto-detect'))
           if (!pixelId) {
             try {
               var pixelRes = await tt('/pixel/list/?advertiser_id=' + advId, token)
