@@ -215,6 +215,12 @@ export default async function handler(req, res) {
       return res.json(await r.json())
     }
 
+    if (action === 'pixel_events') {
+      var advId = req.query.advertiser_id
+      var pixelId = req.query.pixel_id
+      var d = await tt('/pixel/track/get/?advertiser_id=' + advId + '&pixel_id=' + pixelId, token)
+      return res.json(d)
+    }
     if (action === 'regions') {
       var advId = req.query.advertiser_id
       var d = await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=CONVERSIONS', token)
