@@ -104,7 +104,7 @@ export default async function handler(req, res) {
           log('Creating campaign...')
           var campaignPayload = {
             advertiser_id: advId,
-            campaign_name: body.campaign_name || ('HL ' + new Date().toLocaleDateString('pt-BR') + ' ' + (i+1)),
+            campaign_name: body.campaign_name + ' ' + (i+1) + '-' + Date.now().toString().slice(-4) || ('HL ' + new Date().toLocaleDateString('pt-BR') + ' ' + (i+1)),
             objective_type: 'CONVERSIONS',
             budget_mode: 'BUDGET_MODE_DAY',
             budget: body.budget || 80,
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + new Date().toLocaleDateString('pt-BR')),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
-            optimization_goal: 'CONVERT',
+            promotion_type: 'WEBSITE', optimization_goal: 'CONVERT',
             optimization_event: body.optimization_event || 'ON_WEB_ORDER',
             billing_event: 'OCPM',
             bid_type: body.target_cpa ? 'BID_TYPE_CUSTOM' : 'BID_TYPE_NO_BID',
