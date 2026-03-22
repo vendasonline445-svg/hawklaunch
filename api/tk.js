@@ -3,6 +3,36 @@ import nodeFetch from 'node-fetch'
 
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
+// ─── Anti-detecção ────────────────────────────────────────────────────────────
+
+var USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+]
+
+function randomUA() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+}
+
+// request_id humano: timestamp com jitter + sufixo alfanumérico
+function makeRequestId() {
+  var jitter = Math.floor(Math.random() * 999) + 1
+  var ts = Date.now() - jitter
+  var chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  var suffix = ''
+  for (var i = 0; i < 6; i++) suffix += chars[Math.floor(Math.random() * chars.length)]
+  return ts + '_' + suffix
+}
+
+// delay aleatório entre min e max ms
+function rndDelay(min, max) {
+  return new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+}
+
 function parseProxy(raw) {
   if (!raw || !raw.trim()) return null
   var s = raw.trim()
@@ -35,7 +65,16 @@ async function tt(endpoint, token, method, body, proxyRaw) {
   var agent = proxyUrl ? makeAgent(proxyUrl) : null
   var opts = {
     method: method || 'GET',
-    headers: { 'Access-Token': token, 'Content-Type': 'application/json' }
+    headers: {
+      'Access-Token': token,
+      'Content-Type': 'application/json',
+      'User-Agent': randomUA(),
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    }
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
   if (agent) opts.agent = agent
@@ -280,7 +319,7 @@ export default async function handler(req, res) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
           var campPayload = {
             advertiser_id: advId,
-            request_id: '' + Date.now() + Math.floor(Math.random()*9999),
+            request_id: makeRequestId(),
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
             objective_type: 'WEB_CONVERSIONS',
             sales_destination: 'WEBSITE',
@@ -293,11 +332,12 @@ export default async function handler(req, res) {
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
+          await rndDelay(800, 2000)
 
           var scheduleStart = new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var bidValue = parseFloat(body.target_cpa) || 55
           var agPayload = {
-            request_id: '' + Date.now() + Math.floor(Math.random()*9999),
+            request_id: makeRequestId(),
             advertiser_id: advId,
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
@@ -318,6 +358,7 @@ export default async function handler(req, res) {
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
+          await rndDelay(600, 1500)
 
           var codesForAccount = body.rotation ? [sparkCodes[i % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
@@ -326,7 +367,7 @@ export default async function handler(req, res) {
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
               var adPayload = {
-                request_id: '' + Date.now() + Math.floor(Math.random()*9999),
+                request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + (c+1) + '-' + (a+1),
@@ -335,6 +376,7 @@ export default async function handler(req, res) {
                 landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
+              if (c > 0 || a > 0) await rndDelay(400, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
               if (adRes.code !== 0) {
