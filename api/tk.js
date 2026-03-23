@@ -421,7 +421,7 @@ export default async function handler(req, res) {
                 landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
-              if (c > 0 || a > 0) await rndDelay(400, 1000)
+              if (c > 0 || a > 0) await rndDelay(2000, 4000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
               if (adRes.code !== 0) {
