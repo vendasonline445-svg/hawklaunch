@@ -155,10 +155,10 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&identity_type=AUTH_CODE&asset_type=CTA_AUTO_OPTIMIZED&content_type=LANDING_PAGE', token, 'GET', null, proxyRaw)
-  if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length < 3) return { ok: false, error: 'CTA recommend failed' }
+  if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length === 0) return { ok: false, error: 'CTA recommend failed' }
   var assets = rec.data.recommend_assets
   var content = []
-  for (var i = 0; i < Math.min(3, assets.length); i++) {
+  for (var i = 0; i < assets.length; i++) {
     content.push({ asset_content: assets[i].asset_content, asset_ids: assets[i].asset_ids })
   }
   var createRes = await tt('/creative/portfolio/create/', token, 'POST', {
@@ -454,18 +454,22 @@ export default async function handler(req, res) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
+              var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
-                // Nome do ad com sufixo aleatório — menos sequencial
-                var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
-              if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
+              // Usa call_to_action_list do frontend se disponível, senão usa CTA portfolio ID
+              if (body.call_to_action_list && body.call_to_action_list.length > 0) {
+                adPayload.call_to_action_list = body.call_to_action_list.map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
+              } else if (ctaId) {
+                adPayload.ad_configuration = { call_to_action_id: ctaId }
+              }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)

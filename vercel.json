@@ -2,5 +2,10 @@
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "functions": {
+    "api/tk.js": {
+      "maxDuration": 60
+    }
+  },
   "regions": ["gru1"]
 }

@@ -270,7 +270,11 @@ function StepCreative() {
 
   const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
   const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
-  const [ctas, setCtas] = useState<Set<string>>(new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD']))
+  const [ctas, setCtas] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('hawklaunch_ctas')
+    if (saved) try { return new Set(JSON.parse(saved)) } catch {}
+    return new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD'])
+  })
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
 
   return (
@@ -384,7 +388,7 @@ function StepCreative() {
                 {v:'GET_TICKETS_NOW',l:'Get tickets now'},{v:'EXPERIENCE_NOW',l:'Experience now'},
                 {v:'PRE_ORDER_NOW',l:'Pre-order now'},{v:'VISIT_STORE',l:'Visit store'},
                 {v:'DONATE_NOW',l:'Donate now'},
-              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n)}}
+              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n);localStorage.setItem('hawklaunch_ctas',JSON.stringify([...n]))}}
                 className={`chip text-[10px] ${ctas.has(c.v)?'active':''}`}>{c.l}</div>)}
             </div></div>
         </div>
@@ -732,13 +736,21 @@ function StepLaunch() {
     return 'text-gray-400 bg-gray-500/15'
   }
 
+  const proxyLines = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim())
+  const ctasConfigured = (() => { try { const c = JSON.parse(localStorage.getItem('hawklaunch_ctas') || '[]'); return Array.isArray(c) && c.length > 0 } catch { return false } })()
+  const pixelConfigured = !!(localStorage.getItem('hawklaunch_pixel_id') || '').trim()
+  const domainLines = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').filter((l: string) => l.trim())
+  const destUrl = (localStorage.getItem('hawklaunch_dest_url') || '').trim()
+
   const checklist = [
     { ok: true, t: 'Conectado ao TikTok' },
     { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
     { ok: true, t: 'Tipo: ' + campaignType },
     { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
-    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
-    { ok: true, t: (localStorage.getItem('hawklaunch_proxy_list') || '').trim() ? '🛡️ Proxy: ' + (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim()).length + ' proxy(ies)' : '⚠️ Sem proxy (IP da Vercel)' },
+    { ok: !!(destUrl || domainLines.length > 0), t: domainLines.length > 0 ? 'Rodizio de dominios: ' + domainLines.length + ' dominio(s)' : destUrl ? 'URL de destino: ' + destUrl : 'URL de destino nao configurada' },
+    { ok: pixelConfigured, t: pixelConfigured ? 'Pixel configurado' : 'Pixel nao selecionado' },
+    { ok: ctasConfigured, t: ctasConfigured ? 'CTAs configurados (' + ((() => { try { return JSON.parse(localStorage.getItem('hawklaunch_ctas') || '[]').length } catch { return 0 } })()) + ' selecionados)' : 'Nenhum CTA selecionado' },
+    { ok: true, t: proxyLines.length > 0 ? 'Proxy: ' + proxyLines.length + ' proxy(ies) configurada(s)' : 'Sem proxy (IP da Vercel)' },
   ]
 
   // Launch Complete Modal
