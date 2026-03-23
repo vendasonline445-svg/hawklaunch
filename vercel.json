@@ -2,10 +2,5 @@
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
-  "functions": {
-    "api/tk.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "regions": ["gru1"]
 }
