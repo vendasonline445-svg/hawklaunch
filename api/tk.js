@@ -20,12 +20,10 @@ function randomUA() {
 
 // request_id humano: timestamp com jitter + sufixo alfanumérico
 function makeRequestId() {
+  // TikTok exige int64 como string — usa timestamp + sufixo numérico aleatório
   var jitter = Math.floor(Math.random() * 999) + 1
-  var ts = Date.now() - jitter
-  var chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  var suffix = ''
-  for (var i = 0; i < 6; i++) suffix += chars[Math.floor(Math.random() * chars.length)]
-  return ts + '_' + suffix
+  var suffix = Math.floor(Math.random() * 9000) + 1000
+  return String(Date.now() - jitter) + String(suffix)
 }
 
 // delay aleatório entre min e max ms
