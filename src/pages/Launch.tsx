@@ -238,6 +238,9 @@ function StepCreative() {
   const [selectedV, setSelectedV] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [destinationUrl, setDestinationUrl] = useState(() => localStorage.getItem('hawklaunch_dest_url') || '')
+  const [domainList, setDomainList] = useState(() => localStorage.getItem('hawklaunch_domain_list') || '')
+
+  const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
   const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
   const [ctas, setCtas] = useState<Set<string>>(new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD']))
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
@@ -312,6 +315,23 @@ function StepCreative() {
         <h4 className="label mb-3">Detalhes do anúncio</h4>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div><label className="label mb-1.5 block">URL de destino <span className="required">*</span></label><input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl} onChange={e=>{setDestinationUrl(e.target.value);localStorage.setItem("hawklaunch_dest_url",e.target.value)}} /></div>
+          <div className="mt-4">
+            <label className="label mb-1.5 block">
+              Rodízio de domínios por conta
+              <span className="text-xs text-gray-500 font-normal ml-2">Opcional — 1 por linha</span>
+            </label>
+            <textarea
+              className="input font-mono text-xs min-h-[100px]"
+              placeholder={"https://loja1.com/oferta\nhttps://loja2.com/oferta\nhttps://loja3.com/oferta"}
+              value={domainList}
+              onChange={e => { setDomainList(e.target.value); localStorage.setItem('hawklaunch_domain_list', e.target.value) }}
+            />
+            {domainLines.length > 0 && (
+              <div className="text-[11px] text-gray-500 mt-1.5 px-1">
+                📋 {domainLines.length} domínio(s) — {domainLines.slice(0, 3).map((d, i) => `Conta ${i+1} → ${new URL(d).hostname}`).join(' · ')}{domainLines.length > 3 ? '...' : ' (demais rotacionam)'}
+              </div>
+            )}
+          </div>
           <div><label className="label mb-1.5 block">CTAs (selecione vários)</label>
             <div className="flex flex-wrap gap-1.5 mt-1">
               {[
@@ -538,6 +558,7 @@ function StepLaunch() {
     const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
     const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
     const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter((d: string) => d.length > 0)
     const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
     const ctasRaw = localStorage.getItem('hawklaunch_ctas')
     const ctas = ctasRaw ? JSON.parse(ctasRaw) : ['SHOP_NOW']
@@ -550,6 +571,9 @@ function StepLaunch() {
     if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); setLaunching(false); return }
 
     addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
+    if (domainList.length > 0) {
+      addLog('INFO', '🌐 Rodízio de domínios: ' + domainList.length + ' domínio(s) configurado(s)')
+    }
     if (proxyList.length > 0) {
       addLog('INFO', '🛡️ Proxy ativa: ' + proxyList.length + ' proxy(ies) configurada(s)')
     } else {
@@ -584,6 +608,7 @@ function StepLaunch() {
         campaigns_per_account: parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5'),
         ads_per_code: adsPerCode,
         landing_page_url: destUrl,
+        domain_list: domainList,
         ad_texts: adTexts,
         call_to_action_list: ctas,
         budget: budget,

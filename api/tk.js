@@ -285,6 +285,16 @@ export default async function handler(req, res) {
         L('system', '⚠️ Sem proxy — IP direto da Vercel')
       }
 
+      // Parse domain list — rodízio por conta
+      var domainList = Array.isArray(body.domain_list) ? body.domain_list.filter(Boolean) : []
+      var accountDomain = domainList.length > 0
+        ? domainList[accountIndex % domainList.length]
+        : (body.landing_page_url || '')
+
+      if (domainList.length > 0) {
+        L('system', '🌐 Domínio desta conta: ' + accountDomain)
+      }
+
       // Delay inicial humano antes de começar (simula abertura do painel)
       await rndDelay(2000, 4000)
 
@@ -388,7 +398,7 @@ export default async function handler(req, res) {
             bid_type: 'BID_TYPE_CUSTOM',
             conversion_bid_price: bidValue,
             promotion_type: 'WEBSITE',
-            landing_page_url: body.landing_page_url || '',
+            landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: scheduleStart,
@@ -418,7 +428,7 @@ export default async function handler(req, res) {
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + (c+1) + '-' + (a+1),
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
-                landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
+                landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
