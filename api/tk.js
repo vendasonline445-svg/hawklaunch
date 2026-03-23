@@ -203,7 +203,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'token') {
-      var r = await fetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
+      var r = await nodeFetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
         headers: { 'x-api-key': process.env.HAWKLAUNCH_API_KEY }
       })
       return res.json(await r.json())
