@@ -1,4 +1,5 @@
-import { ProxyAgent, fetch as undiFetch } from 'undici'
+import { HttpsProxyAgent } from 'https-proxy-agent'
+import nodeFetch from 'node-fetch'
 
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
@@ -63,20 +64,12 @@ function parseProxy(raw) {
 
 function makeAgent(proxyUrl) {
   if (!proxyUrl) return null
-  try { return new ProxyAgent(proxyUrl) } catch(e) { return null }
-}
-
-// fetch com suporte a proxy via undici dispatcher
-async function smartFetch(url, opts, proxyAgent) {
-  if (proxyAgent) {
-    return undiFetch(url, { ...opts, dispatcher: proxyAgent })
-  }
-  return fetch(url, opts)
+  try { return new HttpsProxyAgent(proxyUrl) } catch(e) { return null }
 }
 
 async function getToken() {
   try {
-    var r = await fetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
+    var r = await nodeFetch('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/get-tiktok-token', {
       headers: { 'x-api-key': process.env.HAWKLAUNCH_API_KEY }
     })
     var d = await r.json()
@@ -108,7 +101,8 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
     }
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
-  var r = await smartFetch(TIKTOK_API + endpoint, opts, agent)
+  if (agent) opts.agent = agent
+  var r = await nodeFetch(TIKTOK_API + endpoint, opts)
   return r.json()
 }
 
@@ -196,18 +190,15 @@ export default async function handler(req, res) {
       var proxyUrl = parseProxy(rawProxy)
       if (!proxyUrl) return res.json({ ok: false, error: 'Proxy inválida ou não informada', parsed: null, raw: rawProxy })
       var agent = makeAgent(proxyUrl)
-      if (!agent) return res.json({ ok: false, error: 'Falha ao criar ProxyAgent: ' + proxyUrl })
+      if (!agent) return res.json({ ok: false, error: 'Falha ao criar agente: ' + proxyUrl })
       try {
         var start = Date.now()
-        var ac = new AbortController()
-        var timeout = setTimeout(function() { ac.abort() }, 15000)
-        var r = await smartFetch('https://api.ipify.org?format=json', { signal: ac.signal }, agent)
-        clearTimeout(timeout)
+        var r = await nodeFetch('https://api.ipify.org?format=json', { agent, timeout: 15000 })
         var data = await r.json()
         var masked = proxyUrl.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@')
         return res.json({ ok: true, ip: data.ip, latency_ms: Date.now() - start, proxy_used: masked })
       } catch(e) {
-        return res.json({ ok: false, error: e.message, proxy_url: proxyUrl.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@') })
+        return res.json({ ok: false, error: e.message })
       }
     }
 
@@ -508,7 +499,7 @@ export default async function handler(req, res) {
     if (action === 'auth' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
-      var r = await fetch(TIKTOK_API + '/oauth2/access_token/', {
+      var r = await nodeFetch(TIKTOK_API + '/oauth2/access_token/', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ app_id: process.env.TIKTOK_APP_ID, secret: process.env.TIKTOK_APP_SECRET, auth_code: body.auth_code }),
       })
