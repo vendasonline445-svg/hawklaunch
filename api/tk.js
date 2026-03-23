@@ -372,7 +372,10 @@ export default async function handler(req, res) {
           results.campaigns++
           await rndDelay(800, 2000)
 
-          var scheduleStart = new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+          // schedule_start_time: usa o do body se passou, senão +10min
+          var scheduleStart = body.schedule_start
+            ? body.schedule_start
+            : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var bidValue = parseFloat(body.target_cpa) || 55
           var agPayload = {
             request_id: makeRequestId(),

@@ -506,6 +506,7 @@ function StepLaunch() {
   const [launching, setLaunching] = useState(false)
   const [progress, setProgress] = useState(0)
   const [schedule, setSchedule] = useState('now')
+  const [customSchedule, setCustomSchedule] = useState('')
   const [result, setResult] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
 
@@ -559,11 +560,17 @@ function StepLaunch() {
     setProgress(5)
 
     let scheduleStart = undefined
-    if (schedule !== 'now') {
-      const mins = schedule === '5min' ? 5 : schedule === '15min' ? 15 : schedule === '30min' ? 30 : 60
+    if (schedule === 'custom' && customSchedule) {
+      // Converte Brasília (UTC-3) para UTC
+      const localDate = new Date(customSchedule)
+      const utcDate = new Date(localDate.getTime() + 3 * 3600000)
+      scheduleStart = utcDate.toISOString().replace('T', ' ').substring(0, 19)
+      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' BRT → ' + scheduleStart + ' UTC')
+    } else if (schedule !== 'now') {
+      const mins = schedule === '1h' ? 60 : schedule === '3h' ? 180 : schedule === '6h' ? 360 : schedule === '12h' ? 720 : 60
       const d = new Date(Date.now() + mins * 60000)
       scheduleStart = d.toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', 'Agendado para: ' + scheduleStart)
+      addLog('INFO', '🕐 Início agendado: +' + schedule + ' → ' + scheduleStart + ' UTC')
     }
 
     try {
@@ -757,14 +764,31 @@ function StepLaunch() {
     </div>
 
     {/* Schedule */}
-    <h4 className="label mb-3">Quando iniciar?</h4>
-    <div className="flex gap-2 mb-6">
-      {['now', '5min', '15min', '30min', '1h'].map(s =>
-        <div key={s} className={'chip ' + (schedule === s ? 'active' : '')} onClick={() => setSchedule(s)}>
-          {s === 'now' ? '⚡ Agora' : '+' + s}
+    <h4 className="label mb-3">Quando iniciar a veiculação?</h4>
+    <div className="flex flex-wrap gap-2 mb-3">
+      {(['now', '1h', '3h', '6h', '12h', 'custom'] as const).map(s =>
+        <div key={s} className={'chip ' + (schedule === s ? 'active' : '')} onClick={() => setSchedule(s as any)}>
+          {s === 'now' ? '⚡ Agora' : s === 'custom' ? '🕐 Horário específico' : '+' + s}
         </div>
       )}
     </div>
+    {schedule === 'custom' && (
+      <div className="mb-4">
+        <label className="label mb-1.5 block text-xs text-gray-400">Horário de início (horário de Brasília — UTC-3)</label>
+        <input
+          type="datetime-local"
+          className="input text-sm"
+          value={customSchedule}
+          min={new Date(Date.now() + 5*60000).toISOString().slice(0,16)}
+          onChange={e => setCustomSchedule(e.target.value)}
+        />
+        {customSchedule && (
+          <div className="text-[11px] text-gray-500 mt-1">
+            UTC (TikTok): {new Date(new Date(customSchedule).getTime() + 3*3600000).toISOString().replace('T',' ').slice(0,19)}
+          </div>
+        )}
+      </div>
+    )}
 
     {/* Launch button */}
     <div className="text-center py-6">
