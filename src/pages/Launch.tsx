@@ -371,12 +371,19 @@ function StepCreative() {
           <div><label className="label mb-1.5 block">CTAs (selecione vários)</label>
             <div className="flex flex-wrap gap-1.5 mt-1">
               {[
-                {v:'SHOP_NOW',l:'Compre Agora'},{v:'LEARN_MORE',l:'Saiba Mais'},{v:'ORDER_NOW',l:'Peça Já'},
-                {v:'BUY_NOW',l:'Compre Já'},{v:'SIGN_UP',l:'Cadastre-se'},{v:'CONTACT_US',l:'Contato'},
-                {v:'DOWNLOAD',l:'Baixar'},{v:'VIEW_NOW',l:'Ver Agora'},{v:'VISIT_STORE',l:'Visite a Loja'},
-                {v:'GET_QUOTE',l:'Orçamento'},{v:'APPLY_NOW',l:'Aplicar'},{v:'BOOK_NOW',l:'Reservar'},
-                {v:'SUBSCRIBE',l:'Inscrever'},{v:'WATCH_MORE',l:'Ver Mais'},{v:'GET_OFFER',l:'Ver Oferta'},
-                {v:'GET_STARTED',l:'Começar'},{v:'LISTEN_NOW',l:'Ouvir'},{v:'INSTALL_NOW',l:'Instalar'},
+                {v:'GET_NOW',l:'Get it now'},{v:'LEARN_MORE',l:'Learn more'},{v:'SHOP_NOW',l:'Shop now'},
+                {v:'CHECK_IT_OUT',l:'Check it out'},{v:'GET_YOUR_ORDER_NOW',l:'Get your order now'},
+                {v:'PLACE_ORDER_TODAY',l:'Place your order today'},{v:'ORDER_YOURS_TODAY',l:'Order yours today'},
+                {v:'GET_YOURS',l:'Get yours'},{v:'CLICK_TO_SHOP_NOW',l:'Click to shop now'},
+                {v:'BUY_NOW',l:'Buy it now'},{v:'DOWNLOAD',l:'Download'},{v:'SIGN_UP',l:'Sign up'},
+                {v:'CONTACT_US',l:'Contact us'},{v:'APPLY_NOW',l:'Apply now'},{v:'BOOK_NOW',l:'Book now'},
+                {v:'PLAY_GAME',l:'Play game'},{v:'WATCH_NOW',l:'Watch now'},{v:'READ_MORE',l:'Read more'},
+                {v:'VIEW_NOW',l:'View now'},{v:'GET_QUOTE',l:'Get quote'},{v:'ORDER_NOW',l:'Order now'},
+                {v:'INSTALL_NOW',l:'Install now'},{v:'GET_SHOWTIMES',l:'Get showtimes'},
+                {v:'LISTEN_NOW',l:'Listen now'},{v:'INTERESTED',l:'Interested'},{v:'SUBSCRIBE',l:'Subscribe'},
+                {v:'GET_TICKETS_NOW',l:'Get tickets now'},{v:'EXPERIENCE_NOW',l:'Experience now'},
+                {v:'PRE_ORDER_NOW',l:'Pre-order now'},{v:'VISIT_STORE',l:'Visit store'},
+                {v:'DONATE_NOW',l:'Donate now'},
               ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n)}}
                 className={`chip text-[10px] ${ctas.has(c.v)?'active':''}`}>{c.l}</div>)}
             </div></div>
