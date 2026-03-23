@@ -38,10 +38,16 @@ function humanizeValue(base, pct) {
 }
 
 function jitterSchedule(scheduleStr, minMinutes, maxMinutes) {
-  var d = new Date(scheduleStr.replace(' ', 'T') + 'Z')
-  var jitter = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes
-  d.setMinutes(d.getMinutes() + jitter)
-  return d.toISOString().replace('T', ' ').substring(0, 19)
+  try {
+    var base = scheduleStr || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+    var d = new Date(base.replace(' ', 'T') + 'Z')
+    if (isNaN(d.getTime())) d = new Date(Date.now() + 10*60000)
+    var jitter = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes
+    d.setMinutes(d.getMinutes() + jitter)
+    return d.toISOString().replace('T', ' ').substring(0, 19)
+  } catch(e) {
+    return new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+  }
 }
 
 function parseProxy(raw) {
