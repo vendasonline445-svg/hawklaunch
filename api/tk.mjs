@@ -365,6 +365,7 @@ export default async function handler(req, res) {
             }
           } catch(e) {
             L(advId, '❌ CTA error: ' + e.message)
+          }
         }
       }
 
