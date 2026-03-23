@@ -31,6 +31,19 @@ function rndDelay(min, max) {
   return new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
 }
 
+function humanizeValue(base, pct) {
+  var delta = base * (pct / 100)
+  var raw = base + (Math.random() * delta * 2 - delta)
+  return Math.round(raw / 5) * 5
+}
+
+function jitterSchedule(scheduleStr, minMinutes, maxMinutes) {
+  var d = new Date(scheduleStr.replace(' ', 'T') + 'Z')
+  var jitter = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes
+  d.setMinutes(d.getMinutes() + jitter)
+  return d.toISOString().replace('T', ' ').substring(0, 19)
+}
+
 function parseProxy(raw) {
   if (!raw || !raw.trim()) return null
   var s = raw.trim()
@@ -367,6 +380,8 @@ export default async function handler(req, res) {
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
+          var baseBudget = body.budget || 111
+          var humanBudget = humanizeValue(baseBudget, 10)
           var campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
@@ -374,7 +389,8 @@ export default async function handler(req, res) {
             objective_type: 'WEB_CONVERSIONS',
             sales_destination: 'WEBSITE',
             budget_mode: 'BUDGET_MODE_DAY',
-            budget: body.budget || 111,
+            budget: humanBudget,
+            operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
           L(advId, 'Campaign: ' + campPayload.campaign_name)
           var campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
@@ -393,7 +409,9 @@ export default async function handler(req, res) {
           var scheduleStart = body.schedule_start
             ? body.schedule_start
             : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
-          var bidValue = parseFloat(body.target_cpa) || 55
+          var baseCpa = parseFloat(body.target_cpa) || 55
+          var humanCpa = humanizeValue(baseCpa, 10)
+          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
           var agPayload = {
             request_id: makeRequestId(),
             advertiser_id: advId,
@@ -404,12 +422,12 @@ export default async function handler(req, res) {
             billing_event: 'OCPM',
             pixel_id: pixelId,
             bid_type: 'BID_TYPE_CUSTOM',
-            conversion_bid_price: bidValue,
+            conversion_bid_price: humanCpa,
             promotion_type: 'WEBSITE',
             landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
-            schedule_start_time: scheduleStart,
+            schedule_start_time: jitteredSchedule,
           }
           var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
           if (agRes.code !== 0) {

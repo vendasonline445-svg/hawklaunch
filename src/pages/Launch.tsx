@@ -570,6 +570,7 @@ function StepLaunch() {
   const [progress, setProgress] = useState(0)
   const [schedule, setSchedule] = useState('now')
   const [customSchedule, setCustomSchedule] = useState('')
+  const [startPaused, setStartPaused] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
 
@@ -655,6 +656,7 @@ function StepLaunch() {
         landing_page_url: destUrl,
         domain_list: domainList,
         cta_cache: ctaCacheSaved,
+        start_paused: startPaused,
         ad_texts: adTexts,
         call_to_action_list: ctas,
         budget: budget,
@@ -873,6 +875,15 @@ function StepLaunch() {
         )}
       </div>
     )}
+
+    {/* Criar pausadas toggle */}
+    <div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-lg mb-4">
+      <div>
+        <div className="text-sm font-semibold">Criar campanhas pausadas</div>
+        <div className="text-[11px] text-gray-500">Ative manualmente depois — reduz detecção de automação</div>
+      </div>
+      <div className={`toggle ${startPaused ? 'on' : ''}`} onClick={() => setStartPaused(!startPaused)}/>
+    </div>
 
     {/* Launch button */}
     <div className="text-center py-6">
