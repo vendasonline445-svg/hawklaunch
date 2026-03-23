@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAppStore } from '@/store'
 import { api } from '@/lib/api'
 import { useAccounts } from '@/hooks/useAccounts'
@@ -567,6 +567,7 @@ function StepProxy() {
 function StepLaunch() {
   const { setStep, selectedAccounts, campaignType } = useAppStore()
   const [launching, setLaunching] = useState(false)
+  const abortRef = useRef(false)
   const [progress, setProgress] = useState(0)
   const [schedule, setSchedule] = useState('now')
   const [customSchedule, setCustomSchedule] = useState('')
@@ -597,7 +598,7 @@ function StepLaunch() {
     logs.filter(l => l.cat === 'DEBUG')
 
   async function launch() {
-    setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true)
+    setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true); abortRef.current = false
 
     const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
     const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
@@ -679,9 +680,11 @@ function StepLaunch() {
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
         const acc = selectedAccounts[ai]
         addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (abortRef.current) { addLog('WARN', '⛔ Lançamento interrompido pelo usuário'); break }
         if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(8000, 15000) }
 
         for (let cp = 0; cp < campsPerAcc; cp++) {
+          if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
@@ -749,7 +752,10 @@ function StepLaunch() {
             <h3 className="text-lg font-bold">{launching ? 'Lançando...' : 'Launch Complete!'}</h3>
             {!launching && counts.errors === 0 && <span className="w-5 h-5 bg-green-500 rounded flex items-center justify-center text-[10px] text-white">✓</span>}
           </div>
-          {!launching && <button className="text-gray-400 hover:text-white text-xl" onClick={() => setShowModal(false)}>✕</button>}
+          {launching
+            ? <button className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-400 text-xs font-bold rounded-lg border border-red-500/30 transition-colors" onClick={() => { abortRef.current = true; addLog('WARN', '⛔ Interrompendo após conta atual...') }}>⛔ Parar</button>
+            : <button className="text-gray-400 hover:text-white text-xl" onClick={() => setShowModal(false)}>✕</button>
+          }
         </div>
 
         {/* Progress */}
