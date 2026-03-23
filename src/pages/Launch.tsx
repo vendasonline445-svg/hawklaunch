@@ -321,9 +321,11 @@ function StepCreative() {
               <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">recomendado</span>
             </div>
             <div className="text-[12px] text-gray-400 mb-3 leading-relaxed">
-              {domainLines.length > 0
-                ? <span className="text-green-400">✓ Usando rodízio — a URL de destino acima será ignorada</span>
-                : <span>Se preenchido, cada conta recebe um domínio diferente em rodízio. Deixe vazio para usar a URL de destino para todas as contas.</span>
+              {domainLines.length > 0 && destinationUrl
+                ? <span className="text-yellow-400">⚠️ Rodízio ativo — a URL de destino será ignorada</span>
+                : domainLines.length > 0
+                ? <span className="text-green-400">✓ Rodízio ativo</span>
+                : <span>Se preenchido, cada conta recebe um domínio diferente. Deixe vazio para usar a URL de destino.</span>
               }
             </div>
             <textarea
