@@ -681,7 +681,7 @@ function StepLaunch() {
         const acc = selectedAccounts[ai]
         addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
         if (abortRef.current) { addLog('WARN', '⛔ Lançamento interrompido pelo usuário'); break }
-        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(8000, 15000) }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
 
         for (let cp = 0; cp < campsPerAcc; cp++) {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
