@@ -458,7 +458,9 @@ export default async function handler(req, res) {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
-                ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + (c+1) + '-' + (a+1),
+                // Nome do ad com sufixo aleatório — menos sequencial
+                var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+                ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
