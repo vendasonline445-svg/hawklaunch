@@ -1,5 +1,7 @@
-import { HttpsProxyAgent } from 'https-proxy-agent'
-import nodeFetch from 'node-fetch'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const { HttpsProxyAgent } = require('https-proxy-agent')
+const nodeFetch = (...args) => import('node-fetch').then(m => m.default(...args))
 
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
