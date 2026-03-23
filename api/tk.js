@@ -60,7 +60,7 @@ async function getToken() {
   } catch(e) { return null }
 }
 
-async function tt(endpoint, token, method, body, proxyRaw) {
+async function ttOnce(endpoint, token, method, body, proxyRaw) {
   var proxyUrl = parseProxy(proxyRaw || null)
   var agent = proxyUrl ? makeAgent(proxyUrl) : null
   var opts = {
@@ -80,6 +80,26 @@ async function tt(endpoint, token, method, body, proxyRaw) {
   if (agent) opts.agent = agent
   var r = await nodeFetch(TIKTOK_API + endpoint, opts)
   return r.json()
+}
+
+async function tt(endpoint, token, method, body, proxyRaw) {
+  var lastErr = ''
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      var result = await ttOnce(endpoint, token, method, body, proxyRaw)
+      // TikTok retorna code !== 0 em erros de rate limit — retry nesses casos
+      if (result && (result.code === 40100 || result.code === 50001 || result.code === 50002)) {
+        lastErr = 'TikTok ' + result.code + ': ' + (result.message || '')
+        await rndDelay(3000 * attempt, 6000 * attempt)
+        continue
+      }
+      return result
+    } catch(e) {
+      lastErr = e.message
+      if (attempt < 3) await rndDelay(2000 * attempt, 4000 * attempt)
+    }
+  }
+  throw new Error(lastErr + ' (3 tentativas)')
 }
 
 async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
@@ -328,7 +348,12 @@ export default async function handler(req, res) {
           }
           L(advId, 'Campaign: ' + campPayload.campaign_name)
           var campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
-          if (campRes.code !== 0) { L(advId, '❌ Campaign: ' + campRes.message); results.errors.push({ account: advId, step: 'campaign', error: campRes.message }); continue }
+          if (campRes.code !== 0) {
+            L(advId, '❌ Campaign: ' + campRes.message)
+            results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
+            await rndDelay(1000, 2000)
+            continue
+          }
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
@@ -354,7 +379,12 @@ export default async function handler(req, res) {
             schedule_start_time: scheduleStart,
           }
           var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
-          if (agRes.code !== 0) { L(advId, '❌ AdGroup: ' + agRes.message); results.errors.push({ account: advId, step: 'adgroup', error: agRes.message }); continue }
+          if (agRes.code !== 0) {
+            L(advId, '❌ AdGroup: ' + agRes.message)
+            results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
+            await rndDelay(1000, 2000)
+            continue
+          }
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
@@ -383,8 +413,11 @@ export default async function handler(req, res) {
                 L(advId, '❌ Ad: ' + adRes.message)
                 results.errors.push({ account: advId, step: 'ad', error: adRes.message })
               } else {
-                L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ': ' + (adRes.data.smart_plus_ad_id || '?'))
+                var adId = adRes.data.smart_plus_ad_id || '?'
+                L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ' | camp=' + campaignId + ' ag=' + adgroupId + ' ad=' + adId)
                 results.ads++
+                if (!results.created) results.created = []
+                results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, ad_id: adId, campaign_name: campPayload.campaign_name })
               }
             }
           }
