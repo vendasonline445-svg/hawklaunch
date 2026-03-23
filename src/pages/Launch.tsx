@@ -315,20 +315,26 @@ function StepCreative() {
         <h4 className="label mb-3">Detalhes do anúncio</h4>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div><label className="label mb-1.5 block">URL de destino <span className="required">*</span></label><input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl} onChange={e=>{setDestinationUrl(e.target.value);localStorage.setItem("hawklaunch_dest_url",e.target.value)}} /></div>
-          <div className="mt-4">
-            <label className="label mb-1.5 block">
-              Rodízio de domínios por conta
-              <span className="text-xs text-gray-500 font-normal ml-2">Opcional — 1 por linha</span>
-            </label>
+          <div className="mt-4 p-4 bg-hawk-input border border-hawk-border rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-semibold">🔄 Rodízio de domínios</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">recomendado</span>
+            </div>
+            <div className="text-[12px] text-gray-400 mb-3 leading-relaxed">
+              {domainLines.length > 0
+                ? <span className="text-green-400">✓ Usando rodízio — a URL de destino acima será ignorada</span>
+                : <span>Se preenchido, cada conta recebe um domínio diferente em rodízio. Deixe vazio para usar a URL de destino para todas as contas.</span>
+              }
+            </div>
             <textarea
-              className="input font-mono text-xs min-h-[100px]"
+              className="input font-mono text-xs min-h-[90px]"
               placeholder={"https://loja1.com/oferta\nhttps://loja2.com/oferta\nhttps://loja3.com/oferta"}
               value={domainList}
               onChange={e => { setDomainList(e.target.value); localStorage.setItem('hawklaunch_domain_list', e.target.value) }}
             />
             {domainLines.length > 0 && (
               <div className="text-[11px] text-gray-500 mt-1.5 px-1">
-                📋 {domainLines.length} domínio(s) — {domainLines.slice(0, 3).map((d, i) => `Conta ${i+1} → ${new URL(d).hostname}`).join(' · ')}{domainLines.length > 3 ? '...' : ' (demais rotacionam)'}
+                📋 {domainLines.slice(0, 3).map((d, i) => `Conta ${i+1} → ${d}`).join(' · ')}{domainLines.length > 3 ? ' ...' : ' (demais rotacionam)'}
               </div>
             )}
           </div>
