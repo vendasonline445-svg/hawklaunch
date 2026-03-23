@@ -45,22 +45,26 @@ export default function Launch() {
 /* ====== STEP 0: ACCOUNTS (cached + TikTok links) ====== */
 function StepAccounts() {
   const { setStep, bcId, setSelectedAccounts } = useAppStore()
-  const { accounts, selected, loading, loadAccounts, toggle, selectAll, selectNone } = useAccounts(bcId)
+  const { accounts, selected, loading, loadAccounts, toggle, selectAll, selectNone, campaignStatus, checkingCampaigns, campaignCheckProgress } = useAccounts(bcId)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
 
   const counts = useMemo(() => {
     const canRun = accounts.filter(a => a.status === 'STATUS_ENABLE').length
-    return { total: accounts.length, canRun, suspended: accounts.length - canRun }
-  }, [accounts])
+    const withCamp = accounts.filter(a => campaignStatus[a.advertiser_id] === true).length
+    const noCamp = accounts.filter(a => campaignStatus[a.advertiser_id] === false).length
+    return { total: accounts.length, canRun, suspended: accounts.length - canRun, withCamp, noCamp }
+  }, [accounts, campaignStatus])
 
   const filtered = useMemo(() => {
     let list = accounts
     if (filter === 'active') list = list.filter(a => a.status === 'STATUS_ENABLE')
     if (filter === 'suspended') list = list.filter(a => a.status !== 'STATUS_ENABLE')
+    if (filter === 'no_campaign') list = list.filter(a => campaignStatus[a.advertiser_id] === false)
+    if (filter === 'with_campaign') list = list.filter(a => campaignStatus[a.advertiser_id] === true)
     if (search) { const q = search.toLowerCase(); list = list.filter(a => (a.advertiser_name||'').toLowerCase().includes(q) || (a.advertiser_id||'').includes(q)) }
     return list
-  }, [accounts, filter, search])
+  }, [accounts, filter, search, campaignStatus])
 
   function statusBadge(s: string) {
     if (s === 'STATUS_ENABLE') return <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/15 text-green-400">ATIVA</span>
@@ -93,13 +97,31 @@ function StepAccounts() {
       </div>
 
       {/* Search */}
+      {checkingCampaigns && (
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <div className="flex-1 h-1 bg-hawk-input rounded-full overflow-hidden">
+            <div className="h-full bg-hawk-accent/50 rounded-full transition-all duration-300" style={{width: campaignCheckProgress + '%'}} />
+          </div>
+          <span className="text-[11px] text-gray-500">Verificando campanhas... {campaignCheckProgress}%</span>
+        </div>
+      )}
+      {checkingCampaigns && (
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <div className="flex-1 h-1 bg-hawk-input rounded-full overflow-hidden">
+            <div className="h-full bg-hawk-accent/50 rounded-full transition-all duration-300" style={{width: campaignCheckProgress + '%'}} />
+          </div>
+          <span className="text-[11px] text-gray-500">Verificando campanhas... {campaignCheckProgress}%</span>
+        </div>
+      )}
       <input className="input mb-4" placeholder="🔍 Buscar conta..." value={search} onChange={e => setSearch(e.target.value)} />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
         {[
           { key: 'all', label: `Todas (${counts.total})` },
-          { key: 'active', label: `✅ Podem Subir (${counts.canRun})` },
+          { key: 'active', label: `✅ Ativas (${counts.canRun})` },
+          { key: 'no_campaign', label: `🆓 Sem campanha (${counts.noCamp})` },
+          { key: 'with_campaign', label: `📢 Com campanha (${counts.withCamp})` },
           { key: 'suspended', label: `🚫 Suspensas (${counts.suspended})` },
         ].map(f => (
           <div key={f.key} className={`chip ${filter===f.key?'active':''}`} onClick={() => setFilter(f.key)}>{f.label}</div>
@@ -122,6 +144,12 @@ function StepAccounts() {
                 <div className="text-[11px] text-gray-500 font-mono">{a.advertiser_id}</div>
               </div>
               {statusBadge(a.status)}
+              {campaignStatus[a.advertiser_id] === true && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-500/15 text-orange-400">COM CAMP</span>
+              )}
+              {campaignStatus[a.advertiser_id] === false && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">LIVRE</span>
+              )}
             </div>
           ))}
         </div>
