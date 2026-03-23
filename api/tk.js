@@ -286,7 +286,7 @@ export default async function handler(req, res) {
       }
 
       // Delay inicial humano antes de começar (simula abertura do painel)
-      await rndDelay(1500, 4000)
+      await rndDelay(2000, 4000)
 
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
@@ -313,7 +313,7 @@ export default async function handler(req, res) {
           }
         }
 
-        await rndDelay(800, 2000)
+        await rndDelay(1500, 3000)
         L(advId, 'Creating CTA portfolio...')
         try {
           var cta = await getOrCreateCTA(token, advId, accountProxy)
@@ -321,7 +321,7 @@ export default async function handler(req, res) {
             ctaCache[advId] = cta.call_to_action_id
             L(advId, '✅ CTA: ' + cta.call_to_action_id)
             results.cta_created++
-            await rndDelay(1000, 2500)
+            await rndDelay(2000, 4000)
           } else {
             L(advId, '⚠️ CTA: ' + cta.error)
             results.errors.push({ account: advId, step: 'cta', error: cta.error })
@@ -363,13 +363,13 @@ export default async function handler(req, res) {
           if (campRes.code !== 0) {
             L(advId, '❌ Campaign: ' + campRes.message)
             results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
-            await rndDelay(1000, 2000)
+            await rndDelay(1500, 3000)
             continue
           }
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          await rndDelay(800, 2000)
+          await rndDelay(1500, 3000)
 
           // schedule_start_time: usa o do body se passou, senão +10min
           var scheduleStart = body.schedule_start
@@ -397,13 +397,13 @@ export default async function handler(req, res) {
           if (agRes.code !== 0) {
             L(advId, '❌ AdGroup: ' + agRes.message)
             results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
-            await rndDelay(1000, 2000)
+            await rndDelay(1500, 3000)
             continue
           }
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          await rndDelay(600, 1500)
+          await rndDelay(1500, 3000)
 
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
@@ -421,7 +421,7 @@ export default async function handler(req, res) {
                 landing_page_url_list: [{ landing_page_url: body.landing_page_url || '' }],
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
-              if (c > 0 || a > 0) await rndDelay(2000, 4000)
+              if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
               if (adRes.code !== 0) {
