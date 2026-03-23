@@ -9,9 +9,10 @@ export default function Launch() {
   const { currentStep, setStep, campaignType, setCampaignType } = useAppStore()
   return (
     <div className="animate-fade-in">
-      <div className="grid grid-cols-3 gap-4 mb-7">
+      <div className="grid grid-cols-4 gap-4 mb-7">
         {([
-          { type: 'smart-spark', icon: '🔥', title: 'Smart+ Spark Ads', badge: 'novo', cls: 'badge-new' },
+          { type: 'smart-spark', icon: '🔥', title: 'Smart+ V1', badge: 'legacy', cls: 'badge-warning' },
+          { type: 'smart-v2', icon: '⚡', title: 'Smart+ V2', badge: 'novo', cls: 'badge-new' },
           { type: 'smart-catalog', icon: '📦', title: 'Smart+ Catálogo', badge: 'catálogo', cls: 'badge-catalog' },
           { type: 'manual', icon: '🎯', title: 'Manual', badge: 'clássico', cls: 'badge-popular' },
         ] as const).map(c => (
@@ -406,8 +407,9 @@ function StepCreative() {
 
 /* ====== STEPS 3-6 ====== */
 function StepStructure() {
-  const { selectedAccounts } = useAppStore()
+  const { selectedAccounts, campaignType } = useAppStore()
   const [name, setName] = useState(() => localStorage.getItem('hawklaunch_offer_name') || '')
+  const [bidType, setBidType] = useState(() => localStorage.getItem('hawklaunch_bid_type') || 'BID_TYPE_CUSTOM')
   const [pixels, setPixels] = useState<any[]>([])
   const [loadingPixels, setLoadingPixels] = useState(false)
   const [selectedPixel, setSelectedPixel] = useState(() => localStorage.getItem('hawklaunch_pixel_id') || '')
@@ -466,9 +468,27 @@ function StepStructure() {
 
     <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4"><span className="text-base">💡</span><div className="text-[12px] text-gray-300">Smart+ usa orçamento automático no nível da campanha. Estrutura: <strong>1 campanha → 1 ad group → N ads</strong> por conta.</div></div>
 
+    {campaignType === 'smart-v2' && (
+      <div className="card-sm bg-hawk-input mb-4">
+        <h4 className="text-sm font-bold mb-3">Bid Strategy</h4>
+        <div className="flex gap-2">
+          {([
+            { v: 'BID_TYPE_CUSTOM', l: 'Cost Cap', d: 'Define um CPA alvo' },
+            { v: 'BID_TYPE_NO_BID', l: 'Maximum Delivery', d: 'Gasta o máximo do budget' },
+          ]).map(b => (
+            <div key={b.v} onClick={() => { setBidType(b.v); localStorage.setItem('hawklaunch_bid_type', b.v) }}
+              className={'flex-1 px-4 py-3 rounded-lg cursor-pointer transition-colors border ' + (bidType === b.v ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500')}>
+              <div className="text-[13px] font-semibold">{b.l}</div>
+              <div className="text-[11px] text-gray-500">{b.d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div><label className="label mb-1.5 block">Budget diário (BRL)</label><input className="input" type="number" defaultValue={80} onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)}/></div>
-      <div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div>
+      <div className={campaignType === 'smart-v2' && bidType === 'BID_TYPE_NO_BID' ? 'opacity-40 pointer-events-none' : ''}><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div>
     </div>
 
     <ToggleRow title="Randomizar orçamento" desc="Valor aleatório"/>
@@ -621,7 +641,9 @@ function StepLaunch() {
     if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); setLaunching(false); return }
     if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); setLaunching(false); return }
 
-    addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
+    const isV2 = campaignType === 'smart-v2'
+    const bidTypeV2 = localStorage.getItem('hawklaunch_bid_type') || 'BID_TYPE_CUSTOM'
+    addLog('INFO', 'Iniciando lançamento ' + (isV2 ? 'Smart+ V2' : 'Smart+ V1') + '...')
     if (domainList.length > 0) {
       addLog('INFO', '🌐 Rodízio de domínios: ' + domainList.length + ' domínio(s) configurado(s)')
     }
@@ -669,6 +691,7 @@ function StepLaunch() {
         pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: ['3469034'],
         schedule_start: scheduleStart,
+        bid_type: isV2 ? bidTypeV2 : undefined,
       }
 
       addLog('DEBUG', 'Payload montado, enviando...')
@@ -694,7 +717,7 @@ function StepLaunch() {
 
           const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
           try {
-            const r = await api.launchSmart(singlePayload)
+            const r = await (isV2 ? api.launchSmartV2 : api.launchSmart)(singlePayload)
             if (r.code === 0 && r.data) {
               const d = r.data as any
               totalResult.campaigns += d.campaigns || 0
@@ -909,7 +932,7 @@ function StepLaunch() {
         className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
       </button>
-      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — Smart+ Spark Ads</p>
+      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'smart-v2' ? 'Smart+ V2' : 'Smart+ Spark Ads'}</p>
     </div>
 
     {/* Last result summary */}

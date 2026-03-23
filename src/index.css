@@ -84,6 +84,7 @@
   .badge-new { @apply bg-purple-500/15 text-purple-400; }
   .badge-popular { @apply bg-hawk-accent/15 text-hawk-accent; }
   .badge-catalog { @apply bg-cyan-500/15 text-cyan-400; }
+  .badge-warning { @apply bg-yellow-500/15 text-yellow-400; }
 
   .label { @apply text-xs font-semibold text-gray-400 uppercase tracking-wider; }
   .label .required { @apply text-hawk-accent ml-0.5; }

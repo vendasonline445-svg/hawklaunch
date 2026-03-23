@@ -496,6 +496,225 @@ export default async function handler(req, res) {
       return res.json({ code: 0, data: results })
     }
 
+    // ─── Smart+ V2 (spec-compliant payloads) ───────────────────────────────────
+    if (action === 'launch_smart_v2' && req.method === 'POST') {
+      var body = req.body
+      var results = { campaigns: 0, adgroups: 0, ads: 0, spark_authorized: 0, cta_created: 0, errors: [], logs: [] }
+      var sparkCodes = body.spark_codes || []
+      var sparkAuthCache = {}
+      var ctaCache = {}
+      var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
+
+      var proxyList = parseProxyList(body.proxy_list || [])
+      var accountIndex = body.account_index != null ? body.account_index : 0
+      var accountProxy = proxyForAccount(proxyList, accountIndex)
+
+      if (accountProxy) {
+        L('system', '🛡️ Proxy: ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+      } else {
+        L('system', '⚠️ Sem proxy — IP direto da Vercel')
+      }
+
+      var domainList = Array.isArray(body.domain_list) ? body.domain_list.filter(Boolean) : []
+      var accountDomain = domainList.length > 0
+        ? domainList[accountIndex % domainList.length]
+        : (body.landing_page_url || '')
+
+      if (domainList.length > 0) {
+        L('system', '🌐 Domínio desta conta: ' + accountDomain)
+      }
+
+      L('system', '⚡ Smart+ V2 — payloads spec-compliant')
+
+      await rndDelay(2000, 4000)
+
+      // Spark authorization (identical to V1)
+      for (var i = 0; i < body.accounts.length; i++) {
+        var advId = body.accounts[i].advertiser_id
+        sparkAuthCache[advId] = {}
+        var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
+
+        for (var s = 0; s < codesForAccount.length; s++) {
+          var code = codesForAccount[s]
+          L(advId, 'Spark ' + (s+1) + '/' + codesForAccount.length + ': authorize...')
+          try {
+            var sr = await authorizeSpark(token, advId, code, accountProxy)
+            if (sr.ok) {
+              sparkAuthCache[advId][code] = sr
+              L(advId, '✅ identity=' + sr.identity_id + ' item=' + sr.item_id)
+              results.spark_authorized++
+            } else {
+              L(advId, '⚠️ ' + sr.error)
+              results.errors.push({ account: advId, step: 'spark', error: sr.error })
+            }
+          } catch(e) {
+            L(advId, '❌ ' + e.message)
+            results.errors.push({ account: advId, step: 'spark', error: e.message })
+          }
+        }
+
+        var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
+        if (existingCtaId) {
+          ctaCache[advId] = existingCtaId
+          L(advId, '✅ CTA reutilizado: ' + existingCtaId)
+        } else {
+          await rndDelay(1500, 3000)
+          L(advId, 'Creating CTA portfolio...')
+          try {
+            var cta = await getOrCreateCTA(token, advId, accountProxy)
+            if (cta.ok) {
+              ctaCache[advId] = cta.call_to_action_id
+              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
+              results.cta_created++
+              results.cta_cache = results.cta_cache || {}
+              results.cta_cache[advId] = cta.call_to_action_id
+              await rndDelay(2000, 4000)
+            } else {
+              L(advId, '⚠️ CTA: ' + cta.error)
+              results.errors.push({ account: advId, step: 'cta', error: cta.error })
+            }
+          } catch(e) {
+            L(advId, '❌ CTA error: ' + e.message)
+          }
+        }
+      }
+
+      var campaignsPerAccount = body.campaigns_per_account || 1
+      var useBidType = body.bid_type || 'BID_TYPE_CUSTOM'
+
+      for (var i = 0; i < body.accounts.length; i++) {
+        var advId = body.accounts[i].advertiser_id
+        var accountSparks = sparkAuthCache[advId] || {}
+        var ctaId = ctaCache[advId] || null
+        var pixelId = body.pixel_id || null
+
+        if (!pixelId) {
+          try {
+            var pr = await tt('/pixel/list/?advertiser_id=' + advId, token, 'GET', null, accountProxy)
+            if (pr.data && pr.data.pixels && pr.data.pixels.length > 0) pixelId = pr.data.pixels[0].pixel_id
+          } catch(e) {}
+          if (!pixelId) { L(advId, '⚠️ No pixel'); results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue }
+        }
+
+        for (var cp = 0; cp < campaignsPerAccount; cp++) {
+          var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
+          var baseBudget = body.budget || 111
+          var humanBudget = humanizeValue(baseBudget, 10)
+
+          // ── V2 Campaign: BUDGET_MODE_DYNAMIC_DAILY_BUDGET + budget_optimize_on ──
+          var campPayload = {
+            advertiser_id: advId,
+            request_id: makeRequestId(),
+            campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
+            objective_type: 'WEB_CONVERSIONS',
+            sales_destination: 'WEBSITE',
+            budget_mode: 'BUDGET_MODE_DYNAMIC_DAILY_BUDGET',
+            budget_optimize_on: true,
+            budget: humanBudget,
+            operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
+          }
+          L(advId, 'Campaign: ' + campPayload.campaign_name)
+          var campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+          if (campRes.code !== 0) {
+            L(advId, '❌ Campaign: ' + campRes.message)
+            results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
+          var campaignId = campRes.data.campaign_id
+          L(advId, '✅ Campaign: ' + campaignId)
+          results.campaigns++
+          await rndDelay(1500, 3000)
+
+          var scheduleStart = body.schedule_start
+            ? body.schedule_start
+            : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+          var baseCpa = parseFloat(body.target_cpa) || 55
+          var humanCpa = humanizeValue(baseCpa, 10)
+          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
+
+          // ── V2 AdGroup: targeting_optimization_mode + bid_type flexível ──
+          var agPayload = {
+            request_id: makeRequestId(),
+            advertiser_id: advId,
+            campaign_id: campaignId,
+            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
+            promotion_type: 'WEBSITE',
+            optimization_goal: 'CONVERT',
+            optimization_event: body.optimization_event || 'SHOPPING',
+            pixel_id: pixelId,
+            billing_event: 'OCPM',
+            bid_type: useBidType,
+            targeting_optimization_mode: 'AUTOMATIC',
+            targeting_spec: { location_ids: body.location_ids || ['3469034'] },
+            schedule_type: 'SCHEDULE_FROM_NOW',
+            schedule_start_time: jitteredSchedule,
+          }
+          // Cost Cap: enviar conversion_bid_price
+          if (useBidType === 'BID_TYPE_CUSTOM') {
+            agPayload.conversion_bid_price = humanCpa
+          }
+          L(advId, 'AdGroup: bid=' + useBidType + (useBidType === 'BID_TYPE_CUSTOM' ? ' cpa=' + humanCpa : ' (max delivery)'))
+          var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          if (agRes.code !== 0) {
+            L(advId, '❌ AdGroup: ' + agRes.message)
+            results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
+          var adgroupId = agRes.data.adgroup_id
+          L(advId, '✅ AdGroup: ' + adgroupId)
+          results.adgroups++
+          await rndDelay(1500, 3000)
+
+          // ── V2 Ads: identical creative structure ──
+          var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
+          var adsPerCode = body.ads_per_code || 2
+          for (var c = 0; c < codesForAccount.length; c++) {
+            var sd = accountSparks[codesForAccount[c]]
+            if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
+            for (var a = 0; a < adsPerCode; a++) {
+              var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+              var adPayload = {
+                request_id: makeRequestId(),
+                advertiser_id: advId,
+                adgroup_id: adgroupId,
+                ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
+                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
+                ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
+                landing_page_url_list: [{ landing_page_url: accountDomain }],
+              }
+              if (body.call_to_action_list && body.call_to_action_list.length > 0) {
+                adPayload.call_to_action_list = body.call_to_action_list.map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
+              } else if (ctaId) {
+                adPayload.ad_configuration = { call_to_action_id: ctaId }
+              }
+              if (c > 0 || a > 0) await rndDelay(3000, 5000)
+              L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
+              var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+              if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
+                L(advId, '⏳ Concurrent limit, aguardando 8s...')
+                await rndDelay(8000, 12000)
+                adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+              }
+              if (adRes.code !== 0) {
+                L(advId, '❌ Ad: ' + adRes.message)
+                results.errors.push({ account: advId, step: 'ad', error: adRes.message })
+              } else {
+                var adId = adRes.data.smart_plus_ad_id || adRes.data.ad_id || '?'
+                L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ' | camp=' + campaignId + ' ag=' + adgroupId + ' ad=' + adId)
+                results.ads++
+                if (!results.created) results.created = []
+                results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, ad_id: adId, campaign_name: campPayload.campaign_name })
+              }
+            }
+          }
+        }
+      }
+
+      return res.json({ code: 0, data: results })
+    }
+
     if (action === 'auth' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
