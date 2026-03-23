@@ -743,7 +743,14 @@ function StepLaunch() {
           <div className="flex gap-2">
             {!launching && <>
               <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(logs.map(l => l.time + ' [' + l.cat + '] ' + l.msg).join('\n')) }}>📋 Copy</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowModal(false)}>Fechar</button>
+              {selectedAccounts.length > 0 && (
+                <button className="btn btn-secondary btn-sm" onClick={() => {
+                  selectedAccounts.forEach((acc: any) => {
+                    window.open('https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + acc.advertiser_id + '&is_refresh_page=true', '_blank')
+                  })
+                }}>🔗 Abrir {selectedAccounts.length} conta(s)</button>
+              )}
+              <button className="btn btn-primary btn-sm" onClick={() => setShowModal(false)}>Fechar</button>
             </>}
           </div>
         </div>

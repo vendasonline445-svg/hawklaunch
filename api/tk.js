@@ -424,6 +424,12 @@ export default async function handler(req, res) {
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+              // Retry específico para concurrent requests
+              if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
+                L(advId, '⏳ Concurrent limit, aguardando 8s...')
+                await rndDelay(8000, 12000)
+                adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+              }
               if (adRes.code !== 0) {
                 L(advId, '❌ Ad: ' + adRes.message)
                 results.errors.push({ account: advId, step: 'ad', error: adRes.message })
