@@ -600,6 +600,8 @@ function StepLaunch() {
 
     const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
     const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
+    const ctaCacheRaw = localStorage.getItem('hawklaunch_cta_cache')
+    const ctaCacheSaved: Record<string, string> = ctaCacheRaw ? JSON.parse(ctaCacheRaw) : {}
     const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
     const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter((d: string) => d.length > 0)
     const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
@@ -652,6 +654,7 @@ function StepLaunch() {
         ads_per_code: adsPerCode,
         landing_page_url: destUrl,
         domain_list: domainList,
+        cta_cache: ctaCacheSaved,
         ad_texts: adTexts,
         call_to_action_list: ctas,
         budget: budget,
@@ -688,6 +691,12 @@ function StepLaunch() {
               totalResult.campaigns += d.campaigns || 0
               totalResult.adgroups += d.adgroups || 0
               totalResult.ads += d.ads || 0
+              // Salva CTA IDs retornados para reutilizar nas próximas campanhas
+              if (d.cta_cache) {
+                const merged = { ...ctaCacheSaved, ...d.cta_cache }
+                localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(merged))
+                Object.assign(ctaCacheSaved, d.cta_cache)
+              }
               if (d.logs) d.logs.forEach((l: any) => {
                 const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
                 addLog(cat, l.message)

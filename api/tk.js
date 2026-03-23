@@ -323,21 +323,29 @@ export default async function handler(req, res) {
           }
         }
 
-        await rndDelay(1500, 3000)
-        L(advId, 'Creating CTA portfolio...')
-        try {
-          var cta = await getOrCreateCTA(token, advId, accountProxy)
-          if (cta.ok) {
-            ctaCache[advId] = cta.call_to_action_id
-            L(advId, '✅ CTA: ' + cta.call_to_action_id)
-            results.cta_created++
-            await rndDelay(2000, 4000)
-          } else {
-            L(advId, '⚠️ CTA: ' + cta.error)
-            results.errors.push({ account: advId, step: 'cta', error: cta.error })
-          }
-        } catch(e) {
-          L(advId, '❌ CTA error: ' + e.message)
+        // Usa CTA cached do frontend se disponível — evita recriar a cada request
+        var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
+        if (existingCtaId) {
+          ctaCache[advId] = existingCtaId
+          L(advId, '✅ CTA reutilizado: ' + existingCtaId)
+        } else {
+          await rndDelay(1500, 3000)
+          L(advId, 'Creating CTA portfolio...')
+          try {
+            var cta = await getOrCreateCTA(token, advId, accountProxy)
+            if (cta.ok) {
+              ctaCache[advId] = cta.call_to_action_id
+              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
+              results.cta_created++
+              results.cta_cache = results.cta_cache || {}
+              results.cta_cache[advId] = cta.call_to_action_id
+              await rndDelay(2000, 4000)
+            } else {
+              L(advId, '⚠️ CTA: ' + cta.error)
+              results.errors.push({ account: advId, step: 'cta', error: cta.error })
+            }
+          } catch(e) {
+            L(advId, '❌ CTA error: ' + e.message)
         }
       }
 
