@@ -708,7 +708,7 @@ function StepLaunch() {
               })
               if (d.errors) allErrors.push(...d.errors)
             } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
-          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message + (e.stack ? ' | ' + e.stack.split('\n')[1] : '')) }
         }
       }
 
