@@ -599,10 +599,10 @@ function StepLaunch() {
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
         const acc = selectedAccounts[ai]
         addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
-        if (ai > 0) { addLog('INFO', '⏳ Delay entre contas...'); await rndWait(4000, 8000) }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(8000, 15000) }
 
         for (let cp = 0; cp < campsPerAcc; cp++) {
-          if (cp > 0) { addLog('DEBUG', '⏳ Delay...'); await rndWait(2000, 5000) }
+          if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
           const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }

@@ -74,6 +74,14 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
       'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
+      'Origin': 'https://ads.tiktok.com',
+      'Referer': 'https://ads.tiktok.com/',
+      'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
     }
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
@@ -279,6 +287,9 @@ export default async function handler(req, res) {
         L('system', '⚠️ Sem proxy — IP direto da Vercel')
       }
 
+      // Delay inicial humano antes de começar (simula abertura do painel)
+      await rndDelay(1500, 4000)
+
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
         sparkAuthCache[advId] = {}
@@ -303,6 +314,7 @@ export default async function handler(req, res) {
           }
         }
 
+        await rndDelay(800, 2000)
         L(advId, 'Creating CTA portfolio...')
         try {
           var cta = await getOrCreateCTA(token, advId, accountProxy)
@@ -310,6 +322,7 @@ export default async function handler(req, res) {
             ctaCache[advId] = cta.call_to_action_id
             L(advId, '✅ CTA: ' + cta.call_to_action_id)
             results.cta_created++
+            await rndDelay(1000, 2500)
           } else {
             L(advId, '⚠️ CTA: ' + cta.error)
             results.errors.push({ account: advId, step: 'cta', error: cta.error })
