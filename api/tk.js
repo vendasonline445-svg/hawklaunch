@@ -291,7 +291,8 @@ export default async function handler(req, res) {
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
         sparkAuthCache[advId] = {}
-        var codesForAccount = body.rotation ? [sparkCodes[i % sparkCodes.length]] : sparkCodes
+        // Usa accountIndex (índice global da conta) para rodízio correto entre requests
+        var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
 
         for (var s = 0; s < codesForAccount.length; s++) {
           var code = codesForAccount[s]
@@ -404,7 +405,7 @@ export default async function handler(req, res) {
           results.adgroups++
           await rndDelay(600, 1500)
 
-          var codesForAccount = body.rotation ? [sparkCodes[i % sparkCodes.length]] : sparkCodes
+          var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
