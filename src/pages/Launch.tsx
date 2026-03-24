@@ -32,10 +32,10 @@ export default function Launch() {
         ))}
       </div>
       {currentStep === 0 && <StepAccounts />}
-      {currentStep === 1 && <StepIdentity />}
-      {currentStep === 2 && <StepCreative />}
-      {currentStep === 3 && <StepStructure />}
-      {currentStep === 4 && <StepTargeting />}
+      {currentStep === 1 && (campaignType === 'manual' ? <ManualStepIdentity /> : <StepIdentity />)}
+      {currentStep === 2 && (campaignType === 'manual' ? <ManualStepCreative /> : <StepCreative />)}
+      {currentStep === 3 && (campaignType === 'manual' ? <ManualStepStructure /> : <StepStructure />)}
+      {currentStep === 4 && (campaignType === 'manual' ? <ManualStepTargeting /> : <StepTargeting />)}
       {currentStep === 5 && <StepProxy />}
       {currentStep === 6 && <StepLaunch />}
     </div>
@@ -589,9 +589,33 @@ function StepLaunch() {
     logFilter === 'Success' ? logs.filter(l => l.cat === 'OK') :
     logs.filter(l => l.cat === 'DEBUG')
 
+  function buildScheduleStart() {
+    if (schedule === 'custom' && customSchedule) {
+      const utcDate = new Date(new Date(customSchedule).getTime() + 3 * 3600000)
+      const s = utcDate.toISOString().replace('T', ' ').substring(0, 19)
+      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' BRT → ' + s + ' UTC')
+      return s
+    }
+    if (schedule !== 'now') {
+      const mins = schedule === '1h' ? 60 : schedule === '3h' ? 180 : schedule === '6h' ? 360 : schedule === '12h' ? 720 : 60
+      const s = new Date(Date.now() + mins * 60000).toISOString().replace('T', ' ').substring(0, 19)
+      addLog('INFO', '🕐 Início agendado: +' + schedule + ' → ' + s + ' UTC')
+      return s
+    }
+    return undefined
+  }
+
   async function launch() {
     setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true); abortRef.current = false
+    if (campaignType === 'manual') {
+      await launchManual()
+    } else {
+      await launchSmart()
+    }
+    setLaunching(false)
+  }
 
+  async function launchSmart() {
     const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter((c: string) => c.length > 0)
     const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 0)
     const ctaCacheRaw = localStorage.getItem('hawklaunch_cta_cache')
@@ -606,45 +630,32 @@ function StepLaunch() {
     const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '2')
     const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
 
-    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); setLaunching(false); return }
-    if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); setLaunching(false); return }
+    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
+    if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); return }
 
     addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
-    if (domainList.length > 0) {
-      addLog('INFO', '🌐 Rodízio de domínios: ' + domainList.length + ' domínio(s) configurado(s)')
-    }
-    if (proxyList.length > 0) {
-      addLog('INFO', '🛡️ Proxy ativa: ' + proxyList.length + ' proxy(ies) configurada(s)')
-    } else {
-      addLog('WARN', '⚠️ Sem proxy — requests saindo do IP da Vercel')
-    }
+    if (domainList.length > 0) addLog('INFO', '🌐 Rodízio: ' + domainList.length + ' domínio(s)')
+    if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
+    else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
     addLog('INFO', selectedAccounts.length + ' conta(s) × ' + sparkCodes.length + ' código(s) × ' + adsPerCode + ' ad(s)/código')
     addLog('DEBUG', 'Budget: R$' + budget + '/dia | CPA: ' + (targetCpa ? 'R$' + targetCpa : 'Auto'))
     setProgress(5)
 
-    let scheduleStart = undefined
-    if (schedule === 'custom' && customSchedule) {
-      // Converte Brasília (UTC-3) para UTC
-      const localDate = new Date(customSchedule)
-      const utcDate = new Date(localDate.getTime() + 3 * 3600000)
-      scheduleStart = utcDate.toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' BRT → ' + scheduleStart + ' UTC')
-    } else if (schedule !== 'now') {
-      const mins = schedule === '1h' ? 60 : schedule === '3h' ? 180 : schedule === '6h' ? 360 : schedule === '12h' ? 720 : 60
-      const d = new Date(Date.now() + mins * 60000)
-      scheduleStart = d.toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', '🕐 Início agendado: +' + schedule + ' → ' + scheduleStart + ' UTC')
-    }
+    const scheduleStart = buildScheduleStart()
+    const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')
+    let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+    let allErrors: any[] = []
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
 
     try {
       const payload = {
         accounts: selectedAccounts,
-        campaign_name: offerName + ' ' + new Date().toLocaleDateString('pt-BR'),
-        adgroup_name: 'AG ' + offerName + ' ' + new Date().toLocaleDateString('pt-BR'),
+        campaign_name: offerName,
+        adgroup_name: 'AG ' + offerName,
         ad_name: offerName,
         spark_codes: sparkCodes,
         rotation: true,
-        campaigns_per_account: parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5'),
+        campaigns_per_account: campsPerAcc,
         ads_per_code: adsPerCode,
         landing_page_url: destUrl,
         domain_list: domainList,
@@ -652,22 +663,13 @@ function StepLaunch() {
         start_paused: startPaused,
         ad_texts: adTexts,
         call_to_action_list: ctas,
-        budget: budget,
+        budget,
         target_cpa: targetCpa || undefined,
-        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined, optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+        optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: ['3469034'],
         schedule_start: scheduleStart,
       }
-
-      addLog('DEBUG', 'Payload montado, enviando...')
-      setProgress(15)
-
-      // Per-campaign loop with delays
-      const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')
-      let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
-      let allLogs: any[] = []
-      let allErrors: any[] = []
-      const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
 
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
         const acc = selectedAccounts[ai]
@@ -680,7 +682,7 @@ function StepLaunch() {
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: ((payload as any).start_seq || 1) + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: (payload as any).proxy_list || [], account_index: ai }
           try {
             const r = await api.launchSmart(singlePayload)
             if (r.code === 0 && r.data) {
@@ -688,7 +690,6 @@ function StepLaunch() {
               totalResult.campaigns += d.campaigns || 0
               totalResult.adgroups += d.adgroups || 0
               totalResult.ads += d.ads || 0
-              // Salva CTA IDs retornados para reutilizar nas próximas campanhas
               if (d.cta_cache) {
                 const merged = { ...ctaCacheSaved, ...d.cta_cache }
                 localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(merged))
@@ -700,21 +701,133 @@ function StepLaunch() {
               })
               if (d.errors) allErrors.push(...d.errors)
             } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
-          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message + (e.stack ? ' | ' + e.stack.split('\n')[1] : '')) }
+          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
         }
       }
+    } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
 
-      setProgress(100)
-      setResult(totalResult)
-      addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
-      if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
-      selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
+    setProgress(100)
+    setResult(totalResult)
+    addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
+    if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
+  }
 
-    } catch(err: any) {
-      addLog('ERROR', 'Fatal: ' + err.message)
+  async function launchManual() {
+    const identityType = localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE'
+    const identityId = localStorage.getItem('hawklaunch_manual_identity_id') || ''
+    const displayName = localStorage.getItem('hawklaunch_manual_display_name') || ''
+    const objective = localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS'
+    const budgetMode = localStorage.getItem('hawklaunch_manual_budget_mode') || 'cbo'
+    const bidPrice = localStorage.getItem('hawklaunch_manual_bid_price') || '0'
+    const callToAction = localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW'
+    const videoIdsRaw = localStorage.getItem('hawklaunch_manual_video_ids')
+    const videoIds: string[] = videoIdsRaw ? JSON.parse(videoIdsRaw) : []
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter(Boolean)
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter(Boolean)
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
+    const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '50')
+    const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
+    const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '1')
+    const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
+    const autoTarget = localStorage.getItem('hawklaunch_manual_auto_target') !== 'false'
+    const ageGroupsRaw = localStorage.getItem('hawklaunch_manual_age_groups')
+    const ageGroups = ageGroupsRaw ? JSON.parse(ageGroupsRaw) : []
+    const gender = localStorage.getItem('hawklaunch_manual_gender') || 'GENDER_UNLIMITED'
+    const osRaw = localStorage.getItem('hawklaunch_manual_os')
+    const osTarget = osRaw ? JSON.parse(osRaw) : ['ANDROID', 'IOS']
+
+    // Validações
+    if (identityType === 'AUTH_CODE' && sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
+    if (identityType !== 'AUTH_CODE' && videoIds.length === 0) { addLog('ERROR', 'Nenhum vídeo selecionado na biblioteca!'); return }
+    if (!destUrl && domainList.length === 0) { addLog('ERROR', 'URL de destino não configurada!'); return }
+
+    addLog('INFO', 'Iniciando lançamento Manual Campaigns...')
+    addLog('INFO', 'Objetivo: ' + objective + ' | Identity: ' + identityType + ' | Budget Mode: ' + budgetMode.toUpperCase())
+    if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
+    else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
+    addLog('DEBUG', 'Budget: R$' + budget + '/dia | Lance: ' + (parseFloat(bidPrice) > 0 ? 'R$' + bidPrice : 'Auto'))
+    setProgress(5)
+
+    const scheduleStart = buildScheduleStart()
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+    let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+    let allErrors: any[] = []
+
+    const billingByObjective: Record<string, string> = {
+      CONVERSIONS: 'OCPM', TRAFFIC: 'OCPM', REACH: 'CPM', VIDEO_VIEWS: 'OCPM',
+    }
+    const goalByObjective: Record<string, string> = {
+      CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'VIDEO_PLAY',
     }
 
-    setLaunching(false)
+    try {
+      const payload = {
+        campaign_name: offerName,
+        adgroup_name: 'AG ' + offerName,
+        ad_name: offerName,
+        objective_type: objective,
+        budget_mode: budgetMode,
+        budget,
+        bid_price: parseFloat(bidPrice) > 0 ? bidPrice : undefined,
+        billing_event: billingByObjective[objective] || 'OCPM',
+        optimization_goal: goalByObjective[objective] || 'CONVERT',
+        identity_type: identityType,
+        identity_id: identityId || undefined,
+        display_name: displayName || undefined,
+        spark_codes: sparkCodes,
+        video_ids: videoIds,
+        rotation: true,
+        ads_per_code: adsPerCode,
+        call_to_action: callToAction,
+        landing_page_url: destUrl,
+        domain_list: domainList,
+        ad_texts: adTexts,
+        pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+        optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+        start_paused: startPaused,
+        location_ids: ['3469034'],
+        schedule_start: scheduleStart,
+        age_groups: autoTarget ? [] : ageGroups,
+        gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
+        os: autoTarget ? [] : osTarget,
+      }
+
+      for (let ai = 0; ai < selectedAccounts.length; ai++) {
+        const acc = selectedAccounts[ai]
+        addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
+
+        for (let cp = 0; cp < campsPerAcc; cp++) {
+          if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+          if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
+          setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
+
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
+          try {
+            const r = await api.launchManual(singlePayload)
+            if (r.code === 0 && r.data) {
+              const d = r.data as any
+              totalResult.campaigns += d.campaigns || 0
+              totalResult.adgroups += d.adgroups || 0
+              totalResult.ads += d.ads || 0
+              if (d.logs) d.logs.forEach((l: any) => {
+                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
+                addLog(cat, l.message)
+              })
+              if (d.errors) allErrors.push(...d.errors)
+            } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
+          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+        }
+      }
+    } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
+
+    setProgress(100)
+    setResult(totalResult)
+    addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
+    if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
   }
 
   function catColor(cat: string) {
@@ -725,7 +838,19 @@ function StepLaunch() {
     return 'text-gray-400 bg-gray-500/15'
   }
 
-  const checklist = [
+  const manualIdentityType = localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE'
+  const manualVideoIds = (() => { try { const r = localStorage.getItem('hawklaunch_manual_video_ids'); return r ? JSON.parse(r) : [] } catch { return [] } })()
+  const checklist = campaignType === 'manual' ? [
+    { ok: true, t: 'Conectado ao TikTok' },
+    { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
+    { ok: true, t: '🎯 Modo: Manual — ' + (localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS') },
+    { ok: manualIdentityType === 'AUTH_CODE'
+        ? !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim()
+        : manualVideoIds.length > 0,
+      t: manualIdentityType === 'AUTH_CODE' ? 'Spark Codes configurados' : manualVideoIds.length + ' vídeo(s) selecionado(s)' },
+    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim() || !!(localStorage.getItem('hawklaunch_domain_list') || '').trim(), t: 'URL de destino configurada' },
+    { ok: true, t: (localStorage.getItem('hawklaunch_proxy_list') || '').trim() ? '🛡️ Proxy: ' + (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim()).length + ' proxy(ies)' : '⚠️ Sem proxy (IP da Vercel)' },
+  ] : [
     { ok: true, t: 'Conectado ao TikTok' },
     { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
     { ok: true, t: 'Tipo: ' + campaignType },
@@ -890,7 +1015,7 @@ function StepLaunch() {
         className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
       </button>
-      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — Smart+ Spark Ads</p>
+      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'manual' ? 'Campanha Manual' : 'Smart+ Spark Ads'}</p>
     </div>
 
     {/* Last result summary */}
@@ -919,3 +1044,500 @@ function StepLaunch() {
 
 function StepFooter({prev,next}:{prev:number;next:number}){const{setStep}=useAppStore();return<div className="flex justify-between mt-6 pt-4 border-t border-hawk-border"><button className="btn btn-secondary" onClick={()=>setStep(prev)}>← Voltar</button><button className="btn btn-primary" onClick={()=>setStep(next)}>Próximo →</button></div>}
 function ToggleRow({title,desc,defaultOn,onChange}:{title:string;desc:string;defaultOn?:boolean;onChange?:(v:boolean)=>void}){const[on,setOn]=useState(defaultOn||false);return<div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-md mb-2"><div><div className="text-sm font-semibold">{title}</div><div className="text-[11px] text-gray-500">{desc}</div></div><div className={`toggle ${on?'on':''}`} onClick={()=>{setOn(!on);onChange?.(!on)}}/></div>}
+
+/* ====== MANUAL: STEP 1 — IDENTITY ====== */
+function ManualStepIdentity() {
+  const { setStep, selectedAccounts } = useAppStore()
+  const [identityType, setIdentityType] = useState<string>(() => localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE')
+  const [identities, setIdentities] = useState<any[]>([])
+  const [loadingId, setLoadingId] = useState(false)
+  const [selectedIdentityId, setSelectedIdentityId] = useState(() => localStorage.getItem('hawklaunch_manual_identity_id') || '')
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem('hawklaunch_manual_display_name') || '')
+  const [sparkCodes, setSparkCodes] = useState(() => localStorage.getItem('hawklaunch_spark_codes') || '')
+  const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(Boolean)
+
+  function save(type: string) {
+    setIdentityType(type)
+    localStorage.setItem('hawklaunch_manual_identity_type', type)
+  }
+
+  function loadIdentities(type: string) {
+    if (!selectedAccounts[0]) return
+    setLoadingId(true)
+    api.getIdentities(selectedAccounts[0].advertiser_id, type)
+      .then(res => {
+        const l = res.data?.list || []
+        setIdentities(l)
+        if (l.length && !selectedIdentityId) {
+          setSelectedIdentityId(l[0].identity_id)
+          localStorage.setItem('hawklaunch_manual_identity_id', l[0].identity_id)
+        }
+      })
+      .finally(() => setLoadingId(false))
+  }
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center gap-2.5 mb-6">
+        <div className="w-8 h-8 bg-hawk-accent/10 rounded-md flex items-center justify-center">🔗</div>
+        <h2 className="text-lg font-bold">Identity <span className="text-xs font-normal text-gray-500 ml-1">Manual</span></h2>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        {[
+          { key: 'AUTH_CODE', icon: '🔗', title: 'Spark Ads', desc: 'Via código de autorização do vídeo' },
+          { key: 'CUSTOMIZED_USER', icon: '⚡', title: 'Custom User', desc: 'Perfil fictício — nome + avatar' },
+        ].map(t => (
+          <div key={t.key} onClick={() => { save(t.key); if (t.key !== 'AUTH_CODE') loadIdentities(t.key) }}
+            className={`bg-hawk-input border-2 rounded-lg p-5 cursor-pointer text-center ${identityType === t.key ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+            <div className="text-2xl mb-2">{t.icon}</div>
+            <div className="text-sm font-bold">{t.title}</div>
+            <div className="text-[11px] text-gray-500 mt-1">{t.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      {identityType === 'AUTH_CODE' && (
+        <div className="card-sm bg-hawk-input">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-bold">🔗 Spark Ad Codes</h4>
+            <span className="text-xs text-gray-400">{sparkCodeList.length} código(s)</span>
+          </div>
+          <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-3">
+            <span className="text-base">💡</span>
+            <div className="text-[12px] text-gray-300">TikTok app → vídeo → ⋯ → Ad Settings → Generate Code. Um por linha.</div>
+          </div>
+          <textarea
+            className="input font-mono text-xs min-h-[110px]"
+            placeholder="Cole os Spark Ad codes (um por linha)"
+            value={sparkCodes}
+            onChange={e => { setSparkCodes(e.target.value); localStorage.setItem('hawklaunch_spark_codes', e.target.value) }}
+          />
+          {sparkCodeList.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {sparkCodeList.map((code, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-hawk-bg rounded-md">
+                  <span className="text-green-400 text-xs">✓</span>
+                  <span className="font-mono text-[11px] text-gray-300 flex-1 truncate">{code}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {identityType === 'CUSTOMIZED_USER' && (
+        <div className="card-sm bg-hawk-input">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-bold">⚡ Custom User Identity</h4>
+            <button className="btn btn-secondary btn-sm" onClick={() => loadIdentities('CUSTOMIZED_USER')}>{loadingId ? '⏳' : '↻ Carregar'}</button>
+          </div>
+          {identities.length > 0 ? (
+            <div className="space-y-2 mb-3">
+              {identities.map((id: any) => (
+                <div key={id.identity_id} onClick={() => { setSelectedIdentityId(id.identity_id); localStorage.setItem('hawklaunch_manual_identity_id', id.identity_id) }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer border transition-colors ${selectedIdentityId === id.identity_id ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500'}`}>
+                  <div className={`w-5 h-5 border-2 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${selectedIdentityId === id.identity_id ? 'bg-hawk-accent border-hawk-accent text-white' : 'border-hawk-border'}`}>
+                    {selectedIdentityId === id.identity_id ? '✓' : ''}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold">{id.display_name || id.identity_id}</div>
+                    <div className="text-[11px] text-gray-500 font-mono">{id.identity_id}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500 text-sm mb-3">
+              {selectedIdentityId ? <span className="text-green-400 text-xs">✓ Identity: {selectedIdentityId}</span> : 'Clique em "Carregar" para ver as identities'}
+            </div>
+          )}
+          <div>
+            <label className="label mb-1.5 block">Display Name <span className="text-[10px] text-gray-500">(nome exibido no anúncio)</span></label>
+            <input className="input" placeholder="Loja Exemplo" value={displayName}
+              onChange={e => { setDisplayName(e.target.value); localStorage.setItem('hawklaunch_manual_display_name', e.target.value) }} />
+          </div>
+        </div>
+      )}
+
+      <StepFooter prev={0} next={2} />
+    </div>
+  )
+}
+
+/* ====== MANUAL: STEP 2 — CRIATIVOS ====== */
+function ManualStepCreative() {
+  const { selectedAccounts } = useAppStore()
+  const identityType = localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE'
+  const [videos, setVideos] = useState<any[]>([])
+  const [selectedV, setSelectedV] = useState<Set<string>>(() => {
+    try { const raw = localStorage.getItem('hawklaunch_manual_video_ids'); return raw ? new Set(JSON.parse(raw)) : new Set() } catch { return new Set() }
+  })
+  const [loading, setLoading] = useState(false)
+  const [destinationUrl, setDestinationUrl] = useState(() => localStorage.getItem('hawklaunch_dest_url') || '')
+  const [domainList, setDomainList] = useState(() => localStorage.getItem('hawklaunch_domain_list') || '')
+  const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
+  const [cta, setCta] = useState(() => localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW')
+
+  const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
+
+  function toggleVideo(id: string) {
+    const n = new Set(selectedV)
+    n.has(id) ? n.delete(id) : n.add(id)
+    setSelectedV(n)
+    localStorage.setItem('hawklaunch_manual_video_ids', JSON.stringify([...n]))
+  }
+
+  const CTA_OPTIONS = [
+    { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' }, { v: 'ORDER_NOW', l: 'Order now' },
+    { v: 'BUY_NOW', l: 'Buy now' }, { v: 'SIGN_UP', l: 'Sign up' }, { v: 'CONTACT_US', l: 'Contact us' },
+    { v: 'GET_NOW', l: 'Get it now' }, { v: 'GET_YOURS', l: 'Get yours' }, { v: 'VIEW_NOW', l: 'View now' },
+    { v: 'DOWNLOAD', l: 'Download' }, { v: 'APPLY_NOW', l: 'Apply now' }, { v: 'BOOK_NOW', l: 'Book now' },
+    { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'WATCH_NOW', l: 'Watch now' }, { v: 'SUBSCRIBE', l: 'Subscribe' },
+  ]
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center gap-2.5 mb-6">
+        <div className="w-8 h-8 bg-hawk-accent/10 rounded-md flex items-center justify-center">🎬</div>
+        <h2 className="text-lg font-bold">Criativos <span className="text-xs font-normal text-gray-500 ml-1">Manual</span></h2>
+      </div>
+
+      {identityType === 'AUTH_CODE' ? (
+        <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4">
+          <span className="text-base">✅</span>
+          <div className="text-[12px] text-gray-300">Spark Codes configurados na etapa de Identity. Os vídeos do TikTok serão usados automaticamente.</div>
+        </div>
+      ) : (
+        <div className="card-sm bg-hawk-input mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-bold">📚 Vídeos da Biblioteca</h4>
+            <button className="btn btn-secondary btn-sm" onClick={() => {
+              if (!selectedAccounts[0]) return; setLoading(true)
+              api.getVideos(selectedAccounts[0].advertiser_id)
+                .then(res => setVideos(res.data?.list || []))
+                .finally(() => setLoading(false))
+            }}>{loading ? '⏳' : '↻ Carregar'}</button>
+          </div>
+          <div className="text-[11px] text-gray-500 mb-3">{selectedV.size} vídeo(s) selecionado(s)</div>
+          {videos.length > 0 ? (
+            <div className="grid grid-cols-5 gap-3">
+              {videos.slice(0, 20).map((v: any) => {
+                const id = v.video_id || v.material_id
+                return (
+                  <div key={id} onClick={() => toggleVideo(id)}
+                    className={`bg-hawk-bg border-2 rounded-lg overflow-hidden cursor-pointer relative ${selectedV.has(id) ? 'border-hawk-accent' : 'border-hawk-border'}`}>
+                    <div className="w-full aspect-[9/16] bg-[#12141c] flex items-center justify-center">
+                      {v.preview_url || v.video_cover_url
+                        ? <img src={v.preview_url || v.video_cover_url} className="w-full h-full object-cover" alt="" />
+                        : <span className="text-xl text-gray-600">🎥</span>}
+                    </div>
+                    <div className="p-1.5"><div className="text-[9px] truncate">{v.file_name || id}</div></div>
+                    {selectedV.has(id) && <div className="absolute top-1 right-1 w-4 h-4 bg-hawk-accent rounded-full flex items-center justify-center text-[8px] text-white">✓</div>}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 text-sm">Clique em "Carregar"</div>
+          )}
+        </div>
+      )}
+
+      <div className="pt-4 border-t border-hawk-border">
+        <h4 className="label mb-3">Detalhes do anúncio</h4>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="label mb-1.5 block">URL de destino <span className="required">*</span></label>
+            <input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl}
+              onChange={e => { setDestinationUrl(e.target.value); localStorage.setItem('hawklaunch_dest_url', e.target.value) }} />
+          </div>
+          <div className="p-4 bg-hawk-input border border-hawk-border rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-semibold">🔄 Rodízio de domínios</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">opcional</span>
+            </div>
+            <textarea
+              className="input font-mono text-xs min-h-[72px]"
+              placeholder={"https://loja1.com/oferta\nhttps://loja2.com/oferta"}
+              value={domainList}
+              onChange={e => { setDomainList(e.target.value); localStorage.setItem('hawklaunch_domain_list', e.target.value) }}
+            />
+            {domainLines.length > 0 && (
+              <div className="text-[11px] text-gray-500 mt-1">
+                {domainLines.slice(0, 3).map((d, i) => `Conta ${i+1} → ${d}`).join(' · ')}{domainLines.length > 3 ? ' ...' : ''}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="label mb-2 block">Call to Action</label>
+          <div className="flex flex-wrap gap-1.5">
+            {CTA_OPTIONS.map(c => (
+              <div key={c.v} onClick={() => { setCta(c.v); localStorage.setItem('hawklaunch_manual_cta', c.v) }}
+                className={`chip text-[10px] ${cta === c.v ? 'active' : ''}`}>{c.l}</div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="label mb-1.5 block">Textos do anúncio (um por linha)</label>
+          <textarea className="input min-h-[70px]" placeholder="Oferta imperdível!" value={adTexts}
+            onChange={e => { setAdTexts(e.target.value); localStorage.setItem('hawklaunch_ad_texts', e.target.value) }} />
+        </div>
+      </div>
+
+      <StepFooter prev={1} next={3} />
+    </div>
+  )
+}
+
+/* ====== MANUAL: STEP 3 — ESTRUTURA ====== */
+function ManualStepStructure() {
+  const { selectedAccounts } = useAppStore()
+  const [objective, setObjective] = useState(() => localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS')
+  const [budgetMode, setBudgetMode] = useState(() => localStorage.getItem('hawklaunch_manual_budget_mode') || 'cbo')
+  const [pixels, setPixels] = useState<any[]>([])
+  const [loadingPixels, setLoadingPixels] = useState(false)
+  const [selectedPixel, setSelectedPixel] = useState(() => localStorage.getItem('hawklaunch_pixel_id') || '')
+
+  function saveObjective(v: string) { setObjective(v); localStorage.setItem('hawklaunch_manual_objective', v) }
+  function saveBudgetMode(v: string) { setBudgetMode(v); localStorage.setItem('hawklaunch_manual_budget_mode', v) }
+
+  function loadPixels() {
+    if (!selectedAccounts[0]) return
+    setLoadingPixels(true)
+    api.getPixels(selectedAccounts[0].advertiser_id)
+      .then((res: any) => {
+        const list = res.data?.pixels || []
+        setPixels(list)
+        if (list.length > 0 && !selectedPixel) {
+          setSelectedPixel(list[0].pixel_id)
+          localStorage.setItem('hawklaunch_pixel_id', list[0].pixel_id)
+        }
+      })
+      .finally(() => setLoadingPixels(false))
+  }
+
+  const OBJECTIVES = [
+    { v: 'CONVERSIONS', l: '💰 Conversões', desc: 'Pixel + evento de otimização' },
+    { v: 'TRAFFIC', l: '🖱️ Tráfego', desc: 'Cliques para o site' },
+    { v: 'REACH', l: '📡 Alcance', desc: 'Máximo de pessoas' },
+    { v: 'VIDEO_VIEWS', l: '▶️ Visualizações', desc: 'Reproduções do vídeo' },
+  ]
+
+  const OPT_EVENTS: Record<string, { v: string; l: string }[]> = {
+    CONVERSIONS: [
+      { v: 'SHOPPING', l: 'Purchase' },
+      { v: 'INITIATE_ORDER', l: 'Initiate Checkout' },
+      { v: 'ON_WEB_CART', l: 'Add to Cart' },
+      { v: 'ON_WEB_DETAIL', l: 'View Content' },
+      { v: 'ADD_BILLING', l: 'Add Payment Info' },
+    ],
+    TRAFFIC: [{ v: 'CLICK', l: 'Clique' }],
+    REACH: [{ v: 'REACH', l: 'Alcance' }],
+    VIDEO_VIEWS: [{ v: 'VIDEO_PLAY', l: 'Reprodução' }],
+  }
+
+  return (
+    <div className="card animate-fade-in">
+      <h2 className="text-lg font-bold mb-5">🏗️ Estrutura <span className="text-xs font-normal text-gray-500 ml-1">Manual</span></h2>
+
+      {/* Objective */}
+      <div className="mb-5">
+        <label className="label mb-3 block">Objetivo da campanha</label>
+        <div className="grid grid-cols-2 gap-3">
+          {OBJECTIVES.map(o => (
+            <div key={o.v} onClick={() => saveObjective(o.v)}
+              className={`bg-hawk-input border-2 rounded-lg p-4 cursor-pointer ${objective === o.v ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+              <div className="text-sm font-bold mb-1">{o.l}</div>
+              <div className="text-[11px] text-gray-500">{o.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pixel (CONVERSIONS only) */}
+      {objective === 'CONVERSIONS' && (
+        <div className="card-sm bg-hawk-input mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-bold">📡 Pixel</h4>
+            <button className="btn btn-secondary btn-sm" onClick={loadPixels}>{loadingPixels ? '⏳' : '📥 Carregar'}</button>
+          </div>
+          {pixels.length > 0 ? (
+            <div className="space-y-2">
+              {pixels.map((p: any) => (
+                <div key={p.pixel_id} onClick={() => { setSelectedPixel(p.pixel_id); localStorage.setItem('hawklaunch_pixel_id', p.pixel_id) }}
+                  className={'flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer border ' + (selectedPixel === p.pixel_id ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500')}>
+                  <div className={'w-5 h-5 border-2 rounded-full flex items-center justify-center text-xs ' + (selectedPixel === p.pixel_id ? 'bg-hawk-accent border-hawk-accent text-white' : 'border-hawk-border')}>
+                    {selectedPixel === p.pixel_id ? '✓' : ''}
+                  </div>
+                  <div className="flex-1"><div className="text-[13px] font-semibold">{p.pixel_name || 'Pixel'}</div><div className="text-[11px] text-gray-500 font-mono">{p.pixel_id}</div></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-3 text-gray-500 text-sm">
+              {selectedPixel ? <span className="text-green-400 text-xs">✓ Pixel: {selectedPixel}</span> : 'Clique em "Carregar"'}
+            </div>
+          )}
+          <div className="mt-3">
+            <label className="label mb-1.5 block">Evento de otimização</label>
+            <select className="select" defaultValue={localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING'}
+              onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}>
+              {(OPT_EVENTS[objective] || []).map(ev => <option key={ev.v} value={ev.v}>{ev.l}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Budget mode */}
+      <div className="mb-4">
+        <label className="label mb-2 block">Modo de orçamento</label>
+        <div className="grid grid-cols-2 gap-3">
+          {[{ v: 'cbo', l: 'CBO', desc: 'Orçamento na campanha' }, { v: 'abo', l: 'ABO', desc: 'Orçamento no ad group' }].map(b => (
+            <div key={b.v} onClick={() => saveBudgetMode(b.v)}
+              className={`bg-hawk-input border-2 rounded-lg p-4 cursor-pointer text-center ${budgetMode === b.v ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+              <div className="text-sm font-bold">{b.l}</div>
+              <div className="text-[11px] text-gray-500 mt-1">{b.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="label mb-1.5 block">Budget diário (BRL)</label>
+          <input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_budget') || '50'}
+            onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)} />
+        </div>
+        <div>
+          <label className="label mb-1.5 block">Lance CPA <span className="text-[10px] text-gray-500">(0 = auto)</span></label>
+          <input className="input" type="number" placeholder="0" defaultValue={localStorage.getItem('hawklaunch_manual_bid_price') || ''}
+            onChange={e => localStorage.setItem('hawklaunch_manual_bid_price', e.target.value)} />
+        </div>
+        <div>
+          <label className="label mb-1.5 block">Campanhas por conta</label>
+          <input className="input" type="number" min={1} max={20}
+            defaultValue={localStorage.getItem('hawklaunch_camps_per_account') || '1'}
+            onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)} />
+        </div>
+        <div>
+          <label className="label mb-1.5 block">
+            {localStorage.getItem('hawklaunch_manual_identity_type') === 'AUTH_CODE' ? 'Anúncios por código Spark' : 'Vídeos por ad group'}
+          </label>
+          <input className="input" type="number" min={1} max={10}
+            defaultValue={localStorage.getItem('hawklaunch_ads_per_code') || '1'}
+            onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-hawk-border">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label mb-1.5 block">Prefixo da campanha</label>
+            <input className="input" placeholder="CREME FACIAL"
+              defaultValue={localStorage.getItem('hawklaunch_offer_name') || ''}
+              onChange={e => localStorage.setItem('hawklaunch_offer_name', e.target.value)} />
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Seq. inicial</label>
+            <input className="input" type="number" defaultValue={1} onChange={e => localStorage.setItem('hawklaunch_manual_start_seq', e.target.value)} />
+          </div>
+        </div>
+        <div className="mt-2 px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">
+          {localStorage.getItem('hawklaunch_offer_name') || 'OFERTA'} 01
+        </div>
+      </div>
+
+      <StepFooter prev={2} next={4} />
+    </div>
+  )
+}
+
+/* ====== MANUAL: STEP 4 — TARGETING ====== */
+function ManualStepTargeting() {
+  const [auto, setAuto] = useState(() => localStorage.getItem('hawklaunch_manual_auto_target') !== 'false')
+  const [ageGroups, setAgeGroups] = useState<Set<string>>(() => {
+    try { const r = localStorage.getItem('hawklaunch_manual_age_groups'); return r ? new Set(JSON.parse(r)) : new Set(['AGE_18_24','AGE_25_34','AGE_35_44','AGE_45_54','AGE_55_100']) } catch { return new Set(['AGE_18_24','AGE_25_34','AGE_35_44','AGE_45_54','AGE_55_100']) }
+  })
+  const [gender, setGender] = useState(() => localStorage.getItem('hawklaunch_manual_gender') || 'GENDER_UNLIMITED')
+  const [os, setOs] = useState<Set<string>>(() => {
+    try { const r = localStorage.getItem('hawklaunch_manual_os'); return r ? new Set(JSON.parse(r)) : new Set(['ANDROID','IOS']) } catch { return new Set(['ANDROID','IOS']) }
+  })
+
+  function toggleAge(v: string) {
+    const n = new Set(ageGroups); n.has(v) ? n.delete(v) : n.add(v)
+    setAgeGroups(n); localStorage.setItem('hawklaunch_manual_age_groups', JSON.stringify([...n]))
+  }
+  function toggleOs(v: string) {
+    const n = new Set(os); n.has(v) ? n.delete(v) : n.add(v)
+    setOs(n); localStorage.setItem('hawklaunch_manual_os', JSON.stringify([...n]))
+  }
+  function saveAuto(v: boolean) { setAuto(v); localStorage.setItem('hawklaunch_manual_auto_target', String(v)) }
+  function saveGender(v: string) { setGender(v); localStorage.setItem('hawklaunch_manual_gender', v) }
+
+  return (
+    <div className="card animate-fade-in">
+      <h2 className="text-lg font-bold mb-5">🎯 Targeting <span className="text-xs font-normal text-gray-500 ml-1">Manual</span></h2>
+
+      <ToggleRow title="Targeting automático" desc="IA do TikTok define o público ideal" defaultOn={auto} onChange={saveAuto} />
+
+      <div className={auto ? 'opacity-40 pointer-events-none mt-4' : 'mt-4'}>
+        <div className="mb-5">
+          <label className="label mb-2 block">Faixa etária</label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { v: 'AGE_18_24', l: '18–24' }, { v: 'AGE_25_34', l: '25–34' },
+              { v: 'AGE_35_44', l: '35–44' }, { v: 'AGE_45_54', l: '45–54' }, { v: 'AGE_55_100', l: '55+' },
+            ].map(a => (
+              <div key={a.v} onClick={() => toggleAge(a.v)} className={`chip ${ageGroups.has(a.v) ? 'active' : ''}`}>{a.l}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <label className="label mb-2 block">Gênero</label>
+          <div className="flex gap-2">
+            {[{ v: 'GENDER_UNLIMITED', l: 'Todos' }, { v: 'GENDER_MALE', l: 'Masculino' }, { v: 'GENDER_FEMALE', l: 'Feminino' }].map(g => (
+              <div key={g.v} onClick={() => saveGender(g.v)} className={`chip ${gender === g.v ? 'active' : ''}`}>{g.l}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <label className="label mb-2 block">Sistema operacional</label>
+          <div className="flex gap-2">
+            {[{ v: 'ANDROID', l: '🤖 Android' }, { v: 'IOS', l: '🍎 iOS' }].map(o => (
+              <div key={o.v} onClick={() => toggleOs(o.v)} className={`chip ${os.has(o.v) ? 'active' : ''}`}>{o.l}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label mb-1.5 block">País</label>
+            <select className="select" defaultValue="BR" onChange={e => localStorage.setItem('hawklaunch_manual_country', e.target.value)}>
+              <option value="BR">🇧🇷 Brasil</option>
+              <option value="US">🇺🇸 Estados Unidos</option>
+              <option value="MX">🇲🇽 México</option>
+              <option value="AR">🇦🇷 Argentina</option>
+              <option value="CO">🇨🇴 Colômbia</option>
+            </select>
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Idioma</label>
+            <select className="select">
+              <option value="pt">🇧🇷 Português</option>
+              <option value="es">🇲🇽 Espanhol</option>
+              <option value="en">🇺🇸 Inglês</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <StepFooter prev={3} next={5} />
+    </div>
+  )
+}

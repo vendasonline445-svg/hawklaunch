@@ -46,6 +46,11 @@ export var api = {
     body: JSON.stringify(payload),
   }),
 
+  launchManual: (payload: any) => request('a=launch_manual', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
   testProxy: (proxy: string) => request('a=test_proxy', {
     method: 'POST',
     body: JSON.stringify({ proxy }),

@@ -492,6 +492,241 @@ export default async function handler(req, res) {
       return res.json({ code: 0, data: results })
     }
 
+    if (action === 'launch_manual' && req.method === 'POST') {
+      var body = req.body
+      var results = { campaigns: 0, adgroups: 0, ads: 0, errors: [], logs: [], created: [] }
+      var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
+
+      var proxyList = parseProxyList(body.proxy_list || [])
+      var accountIndex = body.account_index != null ? body.account_index : 0
+      var accountProxy = proxyForAccount(proxyList, accountIndex)
+
+      if (accountProxy) {
+        L('system', '🛡️ Proxy: ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+      } else {
+        L('system', '⚠️ Sem proxy — IP direto da Vercel')
+      }
+
+      var domainList = Array.isArray(body.domain_list) ? body.domain_list.filter(Boolean) : []
+      var accountDomain = domainList.length > 0
+        ? domainList[accountIndex % domainList.length]
+        : (body.landing_page_url || '')
+
+      if (domainList.length > 0) L('system', '🌐 Domínio: ' + accountDomain)
+
+      await rndDelay(2000, 4000)
+
+      for (var i = 0; i < body.accounts.length; i++) {
+        var advId = body.accounts[i].advertiser_id
+        var sparkAuthCache = {}
+
+        // Spark authorization (AUTH_CODE identity only)
+        if (body.identity_type === 'AUTH_CODE' && body.spark_codes && body.spark_codes.length > 0) {
+          var codesForAccount = body.rotation ? [body.spark_codes[accountIndex % body.spark_codes.length]] : body.spark_codes
+          for (var s = 0; s < codesForAccount.length; s++) {
+            var code = codesForAccount[s]
+            L(advId, 'Spark ' + (s+1) + '/' + codesForAccount.length + ': authorize...')
+            try {
+              var sr = await authorizeSpark(token, advId, code, accountProxy)
+              if (sr.ok) {
+                sparkAuthCache[code] = sr
+                L(advId, '✅ identity=' + sr.identity_id + ' item=' + sr.item_id)
+              } else {
+                L(advId, '⚠️ ' + sr.error)
+                results.errors.push({ account: advId, step: 'spark', error: sr.error })
+              }
+            } catch(e) {
+              L(advId, '❌ ' + e.message)
+              results.errors.push({ account: advId, step: 'spark', error: e.message })
+            }
+          }
+        }
+
+        // Pixel (only needed for CONVERSIONS objective)
+        var pixelId = body.pixel_id || null
+        if (!pixelId && body.objective_type === 'CONVERSIONS') {
+          try {
+            var pr = await tt('/pixel/list/?advertiser_id=' + advId, token, 'GET', null, accountProxy)
+            if (pr.data && pr.data.pixels && pr.data.pixels.length > 0) pixelId = pr.data.pixels[0].pixel_id
+          } catch(e) {}
+          if (!pixelId) {
+            L(advId, '⚠️ Nenhum pixel encontrado — pulando conta')
+            results.errors.push({ account: advId, step: 'pixel', error: 'No pixel found' })
+            continue
+          }
+        }
+
+        var campaignsPerAccount = body.campaigns_per_account || 1
+
+        for (var cp = 0; cp < campaignsPerAccount; cp++) {
+          var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
+          var isCBO = body.budget_mode !== 'abo'
+          var humanBudget = humanizeValue(body.budget || 50, 10)
+
+          // Campaign
+          var campPayload = {
+            advertiser_id: advId,
+            request_id: makeRequestId(),
+            campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
+            objective_type: body.objective_type || 'CONVERSIONS',
+            budget_mode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+            operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
+          }
+          if (isCBO) campPayload.budget = humanBudget
+
+          L(advId, 'Campaign: ' + campPayload.campaign_name)
+          var campRes = await tt('/campaign/create/', token, 'POST', campPayload, accountProxy)
+          if (campRes.code !== 0) {
+            L(advId, '❌ Campaign: ' + campRes.message)
+            results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
+          var campaignId = campRes.data.campaign_id
+          L(advId, '✅ Campaign: ' + campaignId)
+          results.campaigns++
+          await rndDelay(1500, 3000)
+
+          // Ad Group
+          var scheduleStart = body.schedule_start
+            ? body.schedule_start
+            : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
+
+          var targetingSpec = { location_ids: body.location_ids || ['3469034'] }
+          if (body.age_groups && body.age_groups.length > 0) targetingSpec.age = body.age_groups
+          if (body.gender && body.gender !== 'GENDER_UNLIMITED') targetingSpec.gender = [body.gender]
+          if (body.os && body.os.length > 0) targetingSpec.operating_systems = body.os
+
+          var agPayload = {
+            request_id: makeRequestId(),
+            advertiser_id: advId,
+            campaign_id: campaignId,
+            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
+            placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
+            billing_event: body.billing_event || 'OCPM',
+            optimization_goal: body.optimization_goal || 'CONVERT',
+            promotion_type: 'WEBSITE',
+            landing_page_url: accountDomain,
+            schedule_type: 'SCHEDULE_FROM_NOW',
+            schedule_start_time: jitteredSchedule,
+            targeting_spec: targetingSpec,
+            pacing: 'PACING_MODE_SMOOTH',
+            operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
+          }
+
+          if (!isCBO) {
+            agPayload.budget_mode = 'BUDGET_MODE_DAY'
+            agPayload.budget = humanBudget
+          }
+
+          if (pixelId) {
+            agPayload.pixel_id = pixelId
+            agPayload.optimization_event = body.optimization_event || 'SHOPPING'
+            agPayload.click_attribution_window = 'SEVEN_DAYS'
+            agPayload.view_attribution_window = 'ONE_DAY'
+          }
+
+          if (body.bid_price && parseFloat(body.bid_price) > 0) {
+            agPayload.bid_type = 'BID_TYPE_CUSTOM'
+            agPayload.conversion_bid_price = humanizeValue(parseFloat(body.bid_price), 10)
+          } else {
+            agPayload.bid_type = 'BID_TYPE_NO_BID'
+          }
+
+          var agRes = await tt('/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          if (agRes.code !== 0) {
+            L(advId, '❌ AdGroup: ' + agRes.message)
+            results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
+          var adgroupId = agRes.data.adgroup_id
+          L(advId, '✅ AdGroup: ' + adgroupId)
+          results.adgroups++
+          await rndDelay(1500, 3000)
+
+          // Ads — Spark (AUTH_CODE) mode
+          if (body.identity_type === 'AUTH_CODE') {
+            var sparkCodes2 = body.spark_codes || []
+            var codesForAds = body.rotation ? [sparkCodes2[accountIndex % sparkCodes2.length]] : sparkCodes2
+            var adsPerCode = body.ads_per_code || 1
+            for (var c = 0; c < codesForAds.length; c++) {
+              var sd = sparkAuthCache[codesForAds[c]]
+              if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' não autorizado'); continue }
+              for (var a = 0; a < adsPerCode; a++) {
+                if (c > 0 || a > 0) await rndDelay(3000, 5000)
+                var adSuffixM = Math.random().toString(36).substring(2, 6).toUpperCase()
+                var creativeM = {
+                  ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffixM,
+                  ad_format: 'SINGLE_VIDEO',
+                  tiktok_item_id: sd.item_id,
+                  identity_id: sd.identity_id,
+                  identity_type: 'AUTH_CODE',
+                  call_to_action: body.call_to_action || 'SHOP_NOW',
+                  landing_page_url: accountDomain,
+                }
+                if (body.ad_texts && body.ad_texts.length > 0) creativeM.ad_text = body.ad_texts[(c * adsPerCode + a) % body.ad_texts.length]
+                var adPayloadM = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeM] }
+                L(advId, 'Ad Spark ' + (c+1) + '-' + (a+1) + '...')
+                var adResM = await tt('/ad/create/', token, 'POST', adPayloadM, accountProxy)
+                if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
+                  await rndDelay(8000, 12000)
+                  adResM = await tt('/ad/create/', token, 'POST', adPayloadM, accountProxy)
+                }
+                if (adResM.code !== 0) {
+                  L(advId, '❌ Ad: ' + adResM.message)
+                  results.errors.push({ account: advId, step: 'ad', error: adResM.message })
+                } else {
+                  var adIdM = (adResM.data && adResM.data.ad_ids) ? adResM.data.ad_ids[0] : '?'
+                  L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ' | camp=' + campaignId + ' ag=' + adgroupId + ' ad=' + adIdM)
+                  results.ads++
+                  results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, ad_id: adIdM, campaign_name: campPayload.campaign_name })
+                }
+              }
+            }
+          } else {
+            // Library video mode (CUSTOMIZED_USER / TT_USER)
+            var videoIds = body.video_ids || []
+            if (videoIds.length === 0) { L(advId, '⚠️ Nenhum vídeo selecionado'); results.errors.push({ account: advId, step: 'ad', error: 'No videos' }); continue }
+            for (var v = 0; v < videoIds.length; v++) {
+              if (v > 0) await rndDelay(3000, 5000)
+              var adSuffixV = Math.random().toString(36).substring(2, 6).toUpperCase()
+              var creativeV = {
+                ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffixV,
+                ad_format: 'SINGLE_VIDEO',
+                video_id: videoIds[v],
+                identity_id: body.identity_id || '',
+                identity_type: body.identity_type || 'CUSTOMIZED_USER',
+                call_to_action: body.call_to_action || 'SHOP_NOW',
+                landing_page_url: accountDomain,
+                display_name: body.display_name || '',
+              }
+              if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
+              var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
+              L(advId, 'Ad vídeo ' + (v+1) + '/' + videoIds.length + '...')
+              var adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
+              if (adResV.code !== 0 && adResV.message && adResV.message.includes('concurrent')) {
+                await rndDelay(8000, 12000)
+                adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
+              }
+              if (adResV.code !== 0) {
+                L(advId, '❌ Ad: ' + adResV.message)
+                results.errors.push({ account: advId, step: 'ad', error: adResV.message })
+              } else {
+                var adIdV = (adResV.data && adResV.data.ad_ids) ? adResV.data.ad_ids[0] : '?'
+                L(advId, '✅ Ad (vídeo ' + (v+1) + ') | camp=' + campaignId + ' ag=' + adgroupId + ' ad=' + adIdV)
+                results.ads++
+                results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, ad_id: adIdV, campaign_name: campPayload.campaign_name })
+              }
+            }
+          }
+        }
+      }
+
+      return res.json({ code: 0, data: results })
+    }
+
     if (action === 'auth' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })
