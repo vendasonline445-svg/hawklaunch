@@ -45,9 +45,12 @@ export default function Launch() {
 /* ====== STEP 0: ACCOUNTS (cached + TikTok links) ====== */
 function StepAccounts() {
   const { setStep, bcId, setSelectedAccounts } = useAppStore()
-  const { accounts, selected, loading, loadAccounts, toggle, selectAll, selectNone, campaignStatus, checkingCampaigns, campaignCheckProgress } = useAccounts(bcId)
+  const { accounts, selected, loading, loadAccounts, toggle, selectAll, selectNone, setSelected, campaignStatus, checkingCampaigns, campaignCheckProgress } = useAccounts(bcId)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteProgress, setDeleteProgress] = useState({ done: 0, total: 0, errors: 0 })
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   const counts = useMemo(() => {
     const canRun = accounts.filter(a => a.status === 'STATUS_ENABLE').length
@@ -74,10 +77,33 @@ function StepAccounts() {
     return <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-500/15 text-gray-400">{s?.replace('STATUS_','') || 'N/A'}</span>
   }
 
+  // Abre abas com stagger de 350ms para não ser bloqueado pelo browser
   function openInTikTok(ids: string[]) {
-    ids.forEach(id => {
-      window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${id}&is_refresh_page=true`, '_blank')
+    ids.forEach((id, i) => {
+      setTimeout(() => {
+        window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${id}&is_refresh_page=true`, '_blank')
+      }, i * 350)
     })
+  }
+
+  const accountsWithCampaign = accounts.filter(a => campaignStatus[a.advertiser_id] === true)
+
+  async function deleteCampaignsFromSelected() {
+    const targets = [...selected].filter(id => campaignStatus[id] === true)
+    if (targets.length === 0) return
+    setDeleting(true)
+    setDeleteProgress({ done: 0, total: targets.length, errors: 0 })
+    let errors = 0
+    for (let i = 0; i < targets.length; i++) {
+      try {
+        await api.deleteCampaigns(targets[i])
+      } catch { errors++ }
+      setDeleteProgress({ done: i + 1, total: targets.length, errors })
+      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 800))
+    }
+    setDeleting(false)
+    setShowDeleteModal(false)
+    loadAccounts()
   }
 
   return (
@@ -87,13 +113,71 @@ function StepAccounts() {
         <div className="text-sm text-gray-400"><span className="text-hawk-accent font-bold">{selected.size}</span> selecionada(s)</div>
       </div>
 
+      {/* Delete modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setShowDeleteModal(false)}>
+          <div className="bg-hawk-card border border-hawk-border rounded-2xl w-[420px] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-2xl">🗑️</span>
+              <h3 className="text-lg font-bold">Deletar campanhas</h3>
+            </div>
+            {!deleting ? (
+              <>
+                <p className="text-sm text-gray-400 mb-2">
+                  Serão deletadas <strong className="text-white">todas as campanhas</strong> das contas abaixo:
+                </p>
+                <div className="max-h-[180px] overflow-y-auto mb-4 space-y-1">
+                  {[...selected].filter(id => campaignStatus[id] === true).map(id => {
+                    const acc = accounts.find(a => a.advertiser_id === id)
+                    return <div key={id} className="flex items-center gap-2 px-3 py-1.5 bg-hawk-input rounded text-xs"><span className="text-orange-400">⚠</span><span className="truncate">{acc?.advertiser_name || id}</span></div>
+                  })}
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-300 mb-5">
+                  Esta ação é irreversível. As campanhas serão marcadas como DELETADAS no TikTok Ads.
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn btn-secondary flex-1" onClick={() => setShowDeleteModal(false)}>Cancelar</button>
+                  <button className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-lg transition-colors"
+                    onClick={deleteCampaignsFromSelected}>
+                    🗑️ Confirmar Delete
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="py-4">
+                <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                  <span>Deletando campanhas...</span>
+                  <span>{deleteProgress.done}/{deleteProgress.total}</span>
+                </div>
+                <div className="h-2 bg-hawk-input rounded-full overflow-hidden mb-3">
+                  <div className="h-full bg-red-500 rounded-full transition-all" style={{width: (deleteProgress.done / deleteProgress.total * 100) + '%'}} />
+                </div>
+                {deleteProgress.errors > 0 && <p className="text-xs text-yellow-400">⚠ {deleteProgress.errors} erro(s)</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
         <button className="btn btn-primary btn-sm" onClick={loadAccounts}>
           {loading ? '⏳ Carregando...' : accounts.length > 0 ? '↻ Recarregar' : 'Load Accounts'}
         </button>
-        <button className="btn btn-secondary btn-sm" onClick={() => selectAll(filtered.map(a => a.advertiser_id))}>Todas</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => selectAll(filtered.map(a => a.advertiser_id))}>Todas visíveis</button>
         <button className="btn btn-secondary btn-sm" onClick={selectNone}>Nenhuma</button>
+        {accountsWithCampaign.length > 0 && (
+          <button className="btn btn-secondary btn-sm border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+            onClick={() => setSelected(new Set(accountsWithCampaign.map(a => a.advertiser_id)))}>
+            📢 Selecionar c/ campanha ({accountsWithCampaign.length})
+          </button>
+        )}
+        {[...selected].some(id => campaignStatus[id] === true) && (
+          <button className="btn btn-secondary btn-sm border-red-500/40 text-red-400 hover:bg-red-500/10"
+            onClick={() => setShowDeleteModal(true)}>
+            🗑️ Deletar campanhas ({[...selected].filter(id => campaignStatus[id] === true).length})
+          </button>
+        )}
       </div>
 
       {/* Search */}
@@ -948,8 +1032,10 @@ function StepLaunch() {
               <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(logs.map(l => l.time + ' [' + l.cat + '] ' + l.msg).join('\n')) }}>📋 Copy</button>
               {selectedAccounts.length > 0 && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
-                  selectedAccounts.forEach((acc: any) => {
-                    window.open('https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + acc.advertiser_id + '&is_refresh_page=true', '_blank')
+                  selectedAccounts.forEach((acc: any, i: number) => {
+                    setTimeout(() => {
+                      window.open('https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + acc.advertiser_id + '&is_refresh_page=true', '_blank')
+                    }, i * 350)
                   })
                 }}>🔗 Abrir {selectedAccounts.length} conta(s)</button>
               )}

@@ -8,11 +8,18 @@ var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 var USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
 ]
+
+// Plataformas coerentes com o User-Agent
+var SEC_CH_PLATFORMS = ['"Windows"', '"Windows"', '"macOS"', '"macOS"', '"Linux"']
 
 function randomUA() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
@@ -77,28 +84,44 @@ async function getToken() {
   } catch(e) { return null }
 }
 
+// Gera Accept-Language variado para parecer diferentes regiões/idiomas
+function randomAcceptLang() {
+  var langs = [
+    'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'pt-BR,pt;q=0.9,en;q=0.8',
+    'en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7',
+    'pt-BR,pt;q=0.8,es;q=0.5,en;q=0.3',
+    'en-US,en;q=0.9',
+  ]
+  return langs[Math.floor(Math.random() * langs.length)]
+}
+
 async function ttOnce(endpoint, token, method, body, proxyRaw) {
   var proxyUrl = parseProxy(proxyRaw || null)
   var agent = proxyUrl ? makeAgent(proxyUrl) : null
+  var ua = randomUA()
+  var platform = SEC_CH_PLATFORMS[Math.floor(Math.random() * SEC_CH_PLATFORMS.length)]
+  var isMac = platform.includes('macOS')
+  var chromeVer = ['129', '130', '131'][Math.floor(Math.random() * 3)]
   var opts = {
     method: method || 'GET',
     headers: {
       'Access-Token': token,
       'Content-Type': 'application/json',
-      'User-Agent': randomUA(),
+      'User-Agent': ua,
       'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept-Language': randomAcceptLang(),
       'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
       'Origin': 'https://ads.tiktok.com',
       'Referer': 'https://ads.tiktok.com/',
-      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua': '"Google Chrome";v="' + chromeVer + '", "Chromium";v="' + chromeVer + '", "Not_A Brand";v="24"',
       'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
+      'sec-ch-ua-platform': platform,
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'same-site',
+      'Sec-Fetch-Site': isMac ? 'cross-site' : 'same-site',
     }
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
@@ -208,6 +231,26 @@ export default async function handler(req, res) {
         headers: { 'x-api-key': process.env.HAWKLAUNCH_API_KEY }
       })
       return res.json(await r.json())
+    }
+
+    if (action === 'delete_campaigns' && req.method === 'POST') {
+      var body = req.body
+      var advId = body && body.advertiser_id
+      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
+      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token)
+      if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, deleted: 0 })
+      var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
+      if (camps.length === 0) return res.json({ code: 0, data: { deleted: 0, total: 0 } })
+      var campIds = camps.map(function(c) { return c.campaign_id })
+      var deleted = 0; var errors = []
+      for (var i = 0; i < campIds.length; i += 20) {
+        var batch = campIds.slice(i, i + 20)
+        var delRes = await tt('/campaign/status/update/', token, 'POST', { advertiser_id: advId, campaign_ids: batch, operation_status: 'DELETE' })
+        if (delRes.code === 0) deleted += batch.length
+        else errors.push(delRes.message || 'unknown')
+        if (i + 20 < campIds.length) await rndDelay(500, 1000)
+      }
+      return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
     }
 
     if (action === 'bc_list') return res.json(await tt('/bc/get/?page_size=50', token))
