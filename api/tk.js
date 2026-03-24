@@ -170,7 +170,8 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw) {
     portfolio_content: content
   }, proxyRaw)
   if (createRes.code !== 0 || !createRes.data) return { ok: false, error: 'CTA create failed: ' + (createRes.message || '') }
-  return { ok: true, call_to_action_id: createRes.data.creative_portfolio_id }
+  var ctaValues = assets.slice(0, 3).map(function(a) { return a.asset_content })
+  return { ok: true, call_to_action_id: createRes.data.creative_portfolio_id, cta_values: ctaValues }
 }
 
 function parseProxyList(rawList) {
@@ -295,6 +296,7 @@ export default async function handler(req, res) {
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
       var ctaCache = {}
+      var ctaValuesCache = {}
       var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
 
       var proxyList = parseProxyList(body.proxy_list || [])
@@ -357,7 +359,8 @@ export default async function handler(req, res) {
             var cta = await getOrCreateCTA(token, advId, accountProxy)
             if (cta.ok) {
               ctaCache[advId] = cta.call_to_action_id
-              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
+              if (cta.cta_values && cta.cta_values.length > 0) ctaValuesCache[advId] = cta.cta_values
+              L(advId, '✅ CTA criado: ' + cta.call_to_action_id + ' valores: ' + (cta.cta_values || []).join(', '))
               results.cta_created++
               results.cta_cache = results.cta_cache || {}
               results.cta_cache[advId] = cta.call_to_action_id
@@ -469,7 +472,7 @@ export default async function handler(req, res) {
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
                 call_to_action_id: ctaCache[advId] || undefined,
-                call_to_action_list: [{ call_to_action: 'SHOP_NOW' }],
+                call_to_action_list: (ctaValuesCache[advId] || ['LEARN_MORE']).slice(0, 3).map(function(v) { return { call_to_action: v } }),
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
@@ -505,6 +508,7 @@ export default async function handler(req, res) {
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
       var ctaCache = {}
+      var ctaValuesCache = {}
       var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
 
       var proxyList = parseProxyList(body.proxy_list || [])
@@ -566,7 +570,8 @@ export default async function handler(req, res) {
             var cta = await getOrCreateCTA(token, advId, accountProxy)
             if (cta.ok) {
               ctaCache[advId] = cta.call_to_action_id
-              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
+              if (cta.cta_values && cta.cta_values.length > 0) ctaValuesCache[advId] = cta.cta_values
+              L(advId, '✅ CTA criado: ' + cta.call_to_action_id + ' valores: ' + (cta.cta_values || []).join(', '))
               results.cta_created++
               results.cta_cache = results.cta_cache || {}
               results.cta_cache[advId] = cta.call_to_action_id
@@ -687,7 +692,7 @@ export default async function handler(req, res) {
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
                 call_to_action_id: ctaCache[advId] || undefined,
-                call_to_action_list: [{ call_to_action: 'SHOP_NOW' }],
+                call_to_action_list: (ctaValuesCache[advId] || ['LEARN_MORE']).slice(0, 3).map(function(v) { return { call_to_action: v } }),
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
