@@ -458,20 +458,21 @@ export default async function handler(req, res) {
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+              var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
+              // Smart+ V1: CTA portfolio via creative_info (se disponível)
+              if (ctaId) creativeInfo.call_to_action_id = ctaId
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
-                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
+                creative_list: [{ creative_info: creativeInfo }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
-              // Usa call_to_action_list do frontend se disponível, senão SHOP_NOW
+              // Smart+ auto-otimiza CTA — só envia call_to_action_list se frontend mandou explicitamente
               if (body.call_to_action_list && body.call_to_action_list.length > 0) {
                 adPayload.call_to_action_list = body.call_to_action_list.slice(0, 3).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
-              } else {
-                adPayload.call_to_action_list = [{ call_to_action: 'SHOP_NOW' }]
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
@@ -678,20 +679,21 @@ export default async function handler(req, res) {
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+              var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
+              // Smart+ V2: CTA portfolio via creative_info (se disponível)
+              if (ctaId) creativeInfo.call_to_action_id = ctaId
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
-                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
+                creative_list: [{ creative_info: creativeInfo }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
-              // V2: usar call_to_action_list direto (portfolio não suportado em Smart+)
+              // Smart+ auto-otimiza CTA — só envia call_to_action_list se frontend mandou explicitamente
               if (body.call_to_action_list && body.call_to_action_list.length > 0) {
                 adPayload.call_to_action_list = body.call_to_action_list.slice(0, 3).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
-              } else {
-                adPayload.call_to_action_list = [{ call_to_action: 'SHOP_NOW' }]
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
