@@ -459,7 +459,7 @@ export default async function handler(req, res) {
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
-              // Smart+ V1: CTA via portfolio (auto-otimizado pelo TikTok)
+              // Smart+ V1: CTA via portfolio + call_to_action_list obrigatório
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -469,6 +469,7 @@ export default async function handler(req, res) {
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
                 call_to_action_id: ctaCache[advId] || undefined,
+                call_to_action_list: [{ call_to_action: 'SHOP_NOW' }],
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
@@ -676,7 +677,7 @@ export default async function handler(req, res) {
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
-              // Smart+ V2: CTA via portfolio (auto-otimizado pelo TikTok)
+              // Smart+ V2: CTA via portfolio + call_to_action_list obrigatório
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -686,6 +687,7 @@ export default async function handler(req, res) {
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
                 call_to_action_id: ctaCache[advId] || undefined,
+                call_to_action_list: [{ call_to_action: 'SHOP_NOW' }],
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
