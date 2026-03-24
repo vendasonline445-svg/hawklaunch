@@ -40,11 +40,15 @@ function humanizeValue(base, pct) {
 function jitterSchedule(scheduleStr, minMinutes, maxMinutes) {
   try {
     var base = scheduleStr || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
-    var d = new Date(base.replace(' ', 'T') + 'Z')
+    // Parse sem 'Z' para não converter para UTC – o horário do usuário já está no timezone do anunciante
+    var d = new Date(base.replace(' ', 'T'))
     if (isNaN(d.getTime())) d = new Date(Date.now() + 10*60000)
     var jitter = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes
     d.setMinutes(d.getMinutes() + jitter)
-    return d.toISOString().replace('T', ' ').substring(0, 19)
+    // Formatar mantendo o timezone local (não usar toISOString que converte para UTC)
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n }
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
   } catch(e) {
     return new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
   }
