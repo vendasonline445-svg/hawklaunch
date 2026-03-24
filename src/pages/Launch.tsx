@@ -633,7 +633,7 @@ function StepLaunch() {
     if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
     if (!destUrl) { addLog('ERROR', 'URL de destino não configurada!'); return }
 
-    addLog('INFO', 'Iniciando lançamento Smart+ Spark Ads...')
+    addLog('INFO', 'Iniciando lançamento Smart+ V2...')
     if (domainList.length > 0) addLog('INFO', '🌐 Rodízio: ' + domainList.length + ' domínio(s)')
     if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
     else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
