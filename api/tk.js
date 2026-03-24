@@ -465,7 +465,7 @@ export default async function handler(req, res) {
               }
               // Usa call_to_action_list do frontend se disponível, senão usa CTA portfolio ID
               if (body.call_to_action_list && body.call_to_action_list.length > 0) {
-                adPayload.call_to_action_list = body.call_to_action_list.map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
+                adPayload.call_to_action_list = body.call_to_action_list.slice(0, 3).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
               } else if (ctaId) {
                 adPayload.ad_configuration = { call_to_action_id: ctaId }
               }
@@ -685,7 +685,7 @@ export default async function handler(req, res) {
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
               if (body.call_to_action_list && body.call_to_action_list.length > 0) {
-                adPayload.call_to_action_list = body.call_to_action_list.map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
+                adPayload.call_to_action_list = body.call_to_action_list.slice(0, 3).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
               } else if (ctaId) {
                 adPayload.ad_configuration = { call_to_action_id: ctaId }
               }
