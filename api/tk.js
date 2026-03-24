@@ -459,7 +459,7 @@ export default async function handler(req, res) {
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
-              // Smart+ V1: NÃO enviar CTA — Smart+ auto-otimiza
+              // Smart+ V1: CTA obrigatório (1-3 itens)
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -468,8 +468,12 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: creativeInfo }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
+                call_to_action_list: (body.call_to_action_list && body.call_to_action_list.length > 0
+                  ? body.call_to_action_list.slice(0, 3)
+                  : ['SHOP_NOW', 'LEARN_MORE', 'ORDER_NOW']
+                ).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta }),
               }
-              // Smart+ auto-otimiza CTA — NÃO enviar call_to_action_list nem call_to_action_id
+              // Smart+ requer 1-3 CTAs para Automated Creative Optimization
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
@@ -676,7 +680,7 @@ export default async function handler(req, res) {
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var creativeInfo = { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id }
-              // Smart+ V2: NÃO enviar CTA — Smart+ auto-otimiza
+              // Smart+ V2: CTA obrigatório (1-3 itens)
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -685,8 +689,12 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: creativeInfo }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
+                call_to_action_list: (body.call_to_action_list && body.call_to_action_list.length > 0
+                  ? body.call_to_action_list.slice(0, 3)
+                  : ['SHOP_NOW', 'LEARN_MORE', 'ORDER_NOW']
+                ).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta }),
               }
-              // Smart+ auto-otimiza CTA — NÃO enviar call_to_action_list nem call_to_action_id
+              // Smart+ requer 1-3 CTAs para Automated Creative Optimization
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
