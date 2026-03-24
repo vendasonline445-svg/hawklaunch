@@ -684,10 +684,11 @@ export default async function handler(req, res) {
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
-              if (body.call_to_action_list && body.call_to_action_list.length > 0) {
-                adPayload.call_to_action_list = body.call_to_action_list.slice(0, 3).map(function(cta) { return typeof cta === 'string' ? { call_to_action: cta } : cta })
-              } else if (ctaId) {
+              // V2: usar CTA portfolio (compatível com Smart+), fallback SHOP_NOW
+              if (ctaId) {
                 adPayload.ad_configuration = { call_to_action_id: ctaId }
+              } else {
+                adPayload.call_to_action_list = [{ call_to_action: 'SHOP_NOW' }]
               }
               if (c > 0 || a > 0) await rndDelay(3000, 5000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
