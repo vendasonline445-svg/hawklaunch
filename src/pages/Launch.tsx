@@ -737,7 +737,6 @@ function StepLaunch() {
   }
 
   const proxyLines = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim())
-  const ctasConfigured = (() => { try { const c = JSON.parse(localStorage.getItem('hawklaunch_ctas') || '[]'); return Array.isArray(c) && c.length > 0 } catch { return false } })()
   const pixelConfigured = !!(localStorage.getItem('hawklaunch_pixel_id') || '').trim()
   const domainLines = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').filter((l: string) => l.trim())
   const destUrl = (localStorage.getItem('hawklaunch_dest_url') || '').trim()
@@ -749,7 +748,7 @@ function StepLaunch() {
     { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
     { ok: !!(destUrl || domainLines.length > 0), t: domainLines.length > 0 ? 'Rodizio de dominios: ' + domainLines.length + ' dominio(s)' : destUrl ? 'URL de destino: ' + destUrl : 'URL de destino nao configurada' },
     { ok: pixelConfigured, t: pixelConfigured ? 'Pixel configurado' : 'Pixel nao selecionado' },
-    { ok: ctasConfigured, t: ctasConfigured ? 'CTAs configurados (' + ((() => { try { return JSON.parse(localStorage.getItem('hawklaunch_ctas') || '[]').length } catch { return 0 } })()) + ' selecionados)' : 'Nenhum CTA selecionado' },
+    { ok: true, t: 'CTAs: automático via portfolio' },
     { ok: true, t: proxyLines.length > 0 ? 'Proxy: ' + proxyLines.length + ' proxy(ies) configurada(s)' : 'Sem proxy (IP da Vercel)' },
   ]
 
