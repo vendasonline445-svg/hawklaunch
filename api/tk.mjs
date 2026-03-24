@@ -6,12 +6,12 @@ var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 // ─── Anti-detecção ────────────────────────────────────────────────────────────
 
 var USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
 ]
 
 function randomUA() {
@@ -93,7 +93,7 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
       'Pragma': 'no-cache',
       'Origin': 'https://ads.tiktok.com',
       'Referer': 'https://ads.tiktok.com/',
-      'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Windows"',
       'Sec-Fetch-Dest': 'empty',
@@ -454,12 +454,11 @@ export default async function handler(req, res) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
+              var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
-                // Nome do ad com sufixo aleatório — menos sequencial
-                var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),

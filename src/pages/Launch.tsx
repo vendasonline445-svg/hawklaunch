@@ -76,7 +76,7 @@ function StepAccounts() {
 
   function openInTikTok(ids: string[]) {
     ids.forEach(id => {
-      window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + id + '&is_refresh_page=true`, '_blank')
+      window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${id}&is_refresh_page=true`, '_blank')
     })
   }
 
@@ -97,14 +97,6 @@ function StepAccounts() {
       </div>
 
       {/* Search */}
-      {checkingCampaigns && (
-        <div className="flex items-center gap-2 mb-3 px-1">
-          <div className="flex-1 h-1 bg-hawk-input rounded-full overflow-hidden">
-            <div className="h-full bg-hawk-accent/50 rounded-full transition-all duration-300" style={{width: campaignCheckProgress + '%'}} />
-          </div>
-          <span className="text-[11px] text-gray-500">Verificando campanhas... {campaignCheckProgress}%</span>
-        </div>
-      )}
       {checkingCampaigns && (
         <div className="flex items-center gap-2 mb-3 px-1">
           <div className="flex-1 h-1 bg-hawk-input rounded-full overflow-hidden">
@@ -384,7 +376,7 @@ function StepCreative() {
                 {v:'GET_TICKETS_NOW',l:'Get tickets now'},{v:'EXPERIENCE_NOW',l:'Experience now'},
                 {v:'PRE_ORDER_NOW',l:'Pre-order now'},{v:'VISIT_STORE',l:'Visit store'},
                 {v:'DONATE_NOW',l:'Donate now'},
-              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n)}}
+              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n);localStorage.setItem('hawklaunch_ctas',JSON.stringify([...n]))}}
                 className={`chip text-[10px] ${ctas.has(c.v)?'active':''}`}>{c.l}</div>)}
             </div></div>
         </div>
@@ -457,7 +449,7 @@ function StepStructure() {
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div><label className="label mb-1.5 block">Campanhas por conta</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_camps_per_account') || (localStorage.setItem('hawklaunch_camps_per_account', '5'), '5')} min={1} max={20} onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)}/></div>
       <div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_ads_per_code') || (localStorage.setItem('hawklaunch_ads_per_code', '2'), '2')} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div>
-      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="ON_WEB_CART">Add to Cart</option><option value="ADD_BILLING">Add Payment Info</option></select></div>
+      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="ADD_BILLING">Add Payment Info</option></select></div>
     </div>
 
     <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4"><span className="text-base">💡</span><div className="text-[12px] text-gray-300">Smart+ usa orçamento automático no nível da campanha. Estrutura: <strong>1 campanha → 1 ad group → N ads</strong> por conta.</div></div>
@@ -713,6 +705,7 @@ function StepLaunch() {
       }
 
       setProgress(100)
+      setResult(totalResult)
       addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
       if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
       selectedAccounts.forEach((acc: any) => addLog('INFO', '• ' + (acc.advertiser_name || acc.advertiser_id)))
