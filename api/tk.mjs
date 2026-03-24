@@ -720,6 +720,43 @@ export default async function handler(req, res) {
       return res.json({ code: 0, data: results })
     }
 
+    if (action === 'delete_campaigns' && req.method === 'POST') {
+      var body = req.body || {}
+      var advId = body.advertiser_id
+      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
+
+      // Paginate and collect all campaign IDs
+      var allIds = []
+      for (var page = 1; page <= 10; page++) {
+        var cr = await tt('/campaign/get/?advertiser_id=' + advId + '&page=' + page + '&page_size=100', token, 'GET', null, null)
+        if (cr.code !== 0) return res.json({ ok: false, error: cr.message })
+        var list = (cr.data && cr.data.list) ? cr.data.list : []
+        list.forEach(function(c) { allIds.push(c.campaign_id) })
+        if (list.length < 100) break
+      }
+
+      if (allIds.length === 0) return res.json({ ok: true, deleted: 0 })
+
+      // Delete in batches of 20
+      var deleted = 0
+      var errors = []
+      for (var b = 0; b < allIds.length; b += 20) {
+        var batch = allIds.slice(b, b + 20)
+        var dr = await tt('/campaign/status/update/', token, 'POST', {
+          advertiser_id: advId,
+          campaign_ids: batch,
+          operation_status: 'DELETE'
+        }, null)
+        if (dr.code === 0) {
+          deleted += batch.length
+        } else {
+          errors.push(dr.message || 'batch error')
+        }
+      }
+
+      return res.json({ ok: true, deleted: deleted, total: allIds.length, errors: errors })
+    }
+
     if (action === 'auth' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.auth_code) return res.status(400).json({ error: 'auth_code required' })

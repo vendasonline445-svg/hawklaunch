@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store'
 import { api, clearToken } from '@/lib/api'
@@ -14,6 +14,15 @@ export default function Dashboard() {
   const [loadingAcc, setLoadingAcc] = useState(false)
   const [stats, setStats] = useState({ spend: 0, total: 0, active: 0, campaigns: 0 })
   const [filter, setFilter] = useState('all')
+
+  // Delete campaigns modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteStep, setDeleteStep] = useState<'check' | 'confirm' | 'deleting' | 'done'>('check')
+  const [accountsWithCamps, setAccountsWithCamps] = useState<{ id: string; name: string; count: number }[]>([])
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set())
+  const [deleteLogs, setDeleteLogs] = useState<{ id: string; name: string; deleted: number; ok: boolean; error?: string }[]>([])
+  const [deleteProgress, setDeleteProgress] = useState(0)
+  const deleteAbort = useRef(false)
 
   function handleDisconnect() {
     clearToken()
@@ -70,6 +79,59 @@ export default function Dashboard() {
       .finally(() => setLoadingAcc(false))
   }, [bcId])
 
+  async function openDeleteModal() {
+    const activeAccounts = accounts.filter((a: any) => {
+      const s = a.advertiser_status || a.status || ''
+      return s === 'STATUS_ENABLE' || s === 'ENABLE'
+    })
+    setDeleteStep('check')
+    setDeleteLogs([])
+    setDeleteProgress(0)
+    setAccountsWithCamps([])
+    setShowDeleteModal(true)
+
+    // Check which active accounts have campaigns
+    const found: { id: string; name: string; count: number }[] = []
+    const BATCH = 5
+    for (let i = 0; i < activeAccounts.length; i += BATCH) {
+      const batch = activeAccounts.slice(i, i + BATCH)
+      await Promise.all(batch.map(async (a: any) => {
+        try {
+          const r = await api.getCampaigns(a.advertiser_id)
+          const count = r.data?.list?.length || 0
+          if (count > 0) found.push({ id: a.advertiser_id, name: a.advertiser_name || a.name || a.advertiser_id, count })
+        } catch {}
+      }))
+      setDeleteProgress(Math.round(((i + BATCH) / activeAccounts.length) * 100))
+    }
+    setAccountsWithCamps(found)
+    setSelectedForDelete(new Set(found.map(a => a.id)))
+    setDeleteStep('confirm')
+  }
+
+  async function runDelete() {
+    const toDelete = accountsWithCamps.filter(a => selectedForDelete.has(a.id))
+    if (toDelete.length === 0) return
+    setDeleteStep('deleting')
+    setDeleteLogs([])
+    setDeleteProgress(0)
+    deleteAbort.current = false
+
+    for (let i = 0; i < toDelete.length; i++) {
+      if (deleteAbort.current) break
+      const acc = toDelete[i]
+      try {
+        const r = await api.deleteCampaigns(acc.id)
+        setDeleteLogs(prev => [...prev, { id: acc.id, name: acc.name, deleted: (r as any).deleted || 0, ok: (r as any).ok !== false }])
+      } catch(e: any) {
+        setDeleteLogs(prev => [...prev, { id: acc.id, name: acc.name, deleted: 0, ok: false, error: e.message }])
+      }
+      setDeleteProgress(Math.round(((i + 1) / toDelete.length) * 100))
+      if (i < toDelete.length - 1) await new Promise(r => setTimeout(r, 800))
+    }
+    setDeleteStep('done')
+  }
+
   const filteredAccounts = accounts.filter(a => {
     const s = a.advertiser_status || a.status || ''
     if (filter === 'active') return s === 'STATUS_ENABLE' || s === 'ENABLE'
@@ -107,7 +169,12 @@ export default function Dashboard() {
             <h2 className="text-lg font-bold">Conexão TikTok</h2>
           </div>
           {connected && (
-            <button onClick={handleDisconnect} className="btn btn-danger btn-sm">🔌 Desconectar</button>
+            <div className="flex gap-2">
+              {accounts.length > 0 && (
+                <button onClick={openDeleteModal} className="btn btn-secondary btn-sm">🗑️ Deletar Campanhas</button>
+              )}
+              <button onClick={handleDisconnect} className="btn btn-danger btn-sm">🔌 Desconectar</button>
+            </div>
           )}
         </div>
         {connected ? (
@@ -184,6 +251,143 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      {/* Delete Campaigns Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-hawk-card border border-hawk-border rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-hawk-border">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-red-500/15 rounded-lg flex items-center justify-center text-lg">🗑️</div>
+                <div>
+                  <h2 className="font-bold text-base">Deletar Campanhas</h2>
+                  <p className="text-[11px] text-gray-500">Apenas contas ativas com campanha</p>
+                </div>
+              </div>
+              {(deleteStep === 'confirm' || deleteStep === 'done') && (
+                <button onClick={() => setShowDeleteModal(false)} className="text-gray-500 hover:text-white text-lg">✕</button>
+              )}
+            </div>
+
+            <div className="p-5">
+              {/* Step: checking */}
+              {deleteStep === 'check' && (
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-3 animate-pulse">🔍</div>
+                  <p className="text-sm text-gray-300 mb-4">Verificando contas ativas com campanhas...</p>
+                  <div className="w-full bg-hawk-border rounded-full h-1.5">
+                    <div className="bg-hawk-accent h-1.5 rounded-full transition-all" style={{ width: deleteProgress + '%' }} />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">{deleteProgress}%</p>
+                </div>
+              )}
+
+              {/* Step: confirm */}
+              {deleteStep === 'confirm' && (
+                <>
+                  {accountsWithCamps.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-3xl mb-3">✅</div>
+                      <p className="text-sm text-gray-300">Nenhuma conta ativa com campanhas encontrada.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex gap-2 mb-4">
+                        <span className="text-base">⚠️</span>
+                        <p className="text-[12px] text-red-300">Esta ação é <strong>irreversível</strong>. As campanhas serão deletadas permanentemente.</p>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="label">{accountsWithCamps.length} conta(s) com campanha</span>
+                        <div className="flex gap-2">
+                          <button className="text-[11px] text-hawk-accent hover:underline" onClick={() => setSelectedForDelete(new Set(accountsWithCamps.map(a => a.id)))}>Todas</button>
+                          <span className="text-gray-600">·</span>
+                          <button className="text-[11px] text-gray-400 hover:underline" onClick={() => setSelectedForDelete(new Set())}>Nenhuma</button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-[280px] overflow-y-auto mb-5">
+                        {accountsWithCamps.map(a => (
+                          <div key={a.id} onClick={() => {
+                            const n = new Set(selectedForDelete)
+                            n.has(a.id) ? n.delete(a.id) : n.add(a.id)
+                            setSelectedForDelete(n)
+                          }} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border transition-colors ${selectedForDelete.has(a.id) ? 'border-red-500/50 bg-red-500/8' : 'border-hawk-border hover:border-gray-500'}`}>
+                            <div className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${selectedForDelete.has(a.id) ? 'bg-red-500 border-red-500 text-white' : 'border-hawk-border'}`}>
+                              {selectedForDelete.has(a.id) ? '✓' : ''}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-semibold truncate">{a.name}</div>
+                              <div className="text-[10px] text-gray-500 font-mono">{a.id}</div>
+                            </div>
+                            <div className="text-[11px] text-orange-400 font-mono flex-shrink-0">{a.count} camp.</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={runDelete}
+                        disabled={selectedForDelete.size === 0}
+                        className="btn btn-danger w-full disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        🗑️ Deletar campanhas de {selectedForDelete.size} conta(s)
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Step: deleting */}
+              {deleteStep === 'deleting' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold">Deletando...</span>
+                    <span className="text-xs text-gray-400">{deleteProgress}%</span>
+                  </div>
+                  <div className="w-full bg-hawk-border rounded-full h-1.5 mb-4">
+                    <div className="bg-red-500 h-1.5 rounded-full transition-all" style={{ width: deleteProgress + '%' }} />
+                  </div>
+                  <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+                    {deleteLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '✅' : '❌'}</span>
+                        <span className="flex-1 truncate font-semibold">{l.name}</span>
+                        <span className="text-gray-400 font-mono">{l.ok ? l.deleted + ' deletadas' : l.error || 'erro'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Step: done */}
+              {deleteStep === 'done' && (
+                <div>
+                  <div className="text-center py-4 mb-4">
+                    <div className="text-3xl mb-2">✅</div>
+                    <p className="text-sm font-semibold">
+                      {deleteLogs.filter(l => l.ok).reduce((s, l) => s + l.deleted, 0)} campanhas deletadas
+                      {' '}de {deleteLogs.filter(l => l.ok).length} conta(s)
+                    </p>
+                    {deleteLogs.some(l => !l.ok) && (
+                      <p className="text-xs text-red-400 mt-1">{deleteLogs.filter(l => !l.ok).length} conta(s) com erro</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto mb-4">
+                    {deleteLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '✅' : '❌'}</span>
+                        <span className="flex-1 truncate">{l.name}</span>
+                        <span className="font-mono text-gray-400">{l.ok ? l.deleted + ' camp.' : l.error || 'erro'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowDeleteModal(false)} className="btn btn-primary w-full">Fechar</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="flex items-center gap-2.5 mb-6">
