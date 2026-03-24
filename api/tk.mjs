@@ -314,13 +314,9 @@ export default async function handler(req, res) {
         L('system', '🌐 Domínio desta conta: ' + accountDomain)
       }
 
-      // Delay inicial humano antes de começar (simula abertura do painel)
-      await rndDelay(2000, 4000)
-
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
         sparkAuthCache[advId] = {}
-        // Usa accountIndex (índice global da conta) para rodízio correto entre requests
         var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
 
         for (var s = 0; s < codesForAccount.length; s++) {
@@ -342,13 +338,11 @@ export default async function handler(req, res) {
           }
         }
 
-        // Usa CTA cached do frontend se disponível — evita recriar a cada request
         var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
         if (existingCtaId) {
           ctaCache[advId] = existingCtaId
           L(advId, '✅ CTA reutilizado: ' + existingCtaId)
         } else {
-          await rndDelay(1500, 3000)
           L(advId, 'Creating CTA portfolio...')
           try {
             var cta = await getOrCreateCTA(token, advId, accountProxy)
@@ -358,7 +352,6 @@ export default async function handler(req, res) {
               results.cta_created++
               results.cta_cache = results.cta_cache || {}
               results.cta_cache[advId] = cta.call_to_action_id
-              await rndDelay(2000, 4000)
             } else {
               L(advId, '⚠️ CTA: ' + cta.error)
               results.errors.push({ account: advId, step: 'cta', error: cta.error })
@@ -404,21 +397,18 @@ export default async function handler(req, res) {
           if (campRes.code !== 0) {
             L(advId, '❌ Campaign: ' + campRes.message)
             results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
-            await rndDelay(1500, 3000)
             continue
           }
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          await rndDelay(1500, 3000)
+          await rndDelay(400, 700)
 
-          // schedule_start_time: usa o do body se passou, senão +10min
           var scheduleStart = body.schedule_start
             ? body.schedule_start
             : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
-          var baseCpa = parseFloat(body.target_cpa) || 55
-          var humanCpa = humanizeValue(baseCpa, 10)
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
+          var baseCpa = parseFloat(body.target_cpa) || 0
           var agPayload = {
             request_id: makeRequestId(),
             advertiser_id: advId,
@@ -428,25 +418,28 @@ export default async function handler(req, res) {
             optimization_goal: 'CONVERT',
             billing_event: 'OCPM',
             pixel_id: pixelId,
-            bid_type: 'BID_TYPE_CUSTOM',
-            conversion_bid_price: humanCpa,
             promotion_type: 'WEBSITE',
             landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
           }
+          if (baseCpa > 0) {
+            agPayload.bid_type = 'BID_TYPE_CUSTOM'
+            agPayload.conversion_bid_price = humanizeValue(baseCpa, 10)
+          } else {
+            agPayload.bid_type = 'BID_TYPE_NO_BID'
+          }
           var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
           if (agRes.code !== 0) {
             L(advId, '❌ AdGroup: ' + agRes.message)
             results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
-            await rndDelay(1500, 3000)
             continue
           }
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          await rndDelay(1500, 3000)
+          await rndDelay(400, 700)
 
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
@@ -465,13 +458,13 @@ export default async function handler(req, res) {
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
-              if (c > 0 || a > 0) await rndDelay(3000, 5000)
+              if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
               // Retry específico para concurrent requests
               if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
-                L(advId, '⏳ Concurrent limit, aguardando 8s...')
-                await rndDelay(8000, 12000)
+                L(advId, '⏳ Concurrent limit, retry...')
+                await rndDelay(1500, 2500)
                 adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
               }
               if (adRes.code !== 0) {

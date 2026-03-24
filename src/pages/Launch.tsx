@@ -682,7 +682,7 @@ function StepLaunch() {
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: (payload as any).proxy_list || [], account_index: ai }
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
           try {
             const r = await api.launchSmart(singlePayload)
             if (r.code === 0 && r.data) {
