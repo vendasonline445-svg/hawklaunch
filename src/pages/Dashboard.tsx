@@ -396,9 +396,9 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           {[
-            { type: 'smart-spark', icon: '🔥', title: 'Smart+ Spark Ads', desc: 'Smart+ com vídeos orgânicos via Spark.', badge: 'novo', cls: 'badge-new' },
-            { type: 'smart-catalog', icon: '📦', title: 'Smart+ Catálogo', desc: 'Video Shopping Ads com produtos do catálogo.', badge: 'catálogo', cls: 'badge-catalog' },
-            { type: 'manual', icon: '🎯', title: 'Manual', desc: 'Controle total. CBO ou ABO.', badge: 'clássico', cls: 'badge-popular' },
+            { type: 'smart-spark', icon: '🔥', title: 'Smart+ V2', desc: 'Smart+ com Spark Ads. Versão atualizada.', badge: 'novo', cls: 'badge-new' },
+            { type: 'smart-catalog', icon: '⚡', title: 'Smart+ V1', desc: 'Versão anterior do Smart+. Em descontinuação.', badge: 'legado', cls: 'badge-popular' },
+            { type: 'manual', icon: '🎯', title: 'Manual', desc: 'Controle total. CBO ou ABO.', badge: 'clássico', cls: 'badge-catalog' },
           ].map((c) => (
             <div key={c.type} onClick={() => navigate('/launch')}
               className="bg-hawk-card border-2 border-hawk-border rounded-xl p-6 cursor-pointer transition-all hover:border-gray-500 hover:-translate-y-0.5 group">

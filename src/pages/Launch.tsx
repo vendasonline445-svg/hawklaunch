@@ -11,9 +11,9 @@ export default function Launch() {
     <div className="animate-fade-in">
       <div className="grid grid-cols-3 gap-4 mb-7">
         {([
-          { type: 'smart-spark', icon: '🔥', title: 'Smart+ Spark Ads', badge: 'novo', cls: 'badge-new' },
-          { type: 'smart-catalog', icon: '📦', title: 'Smart+ Catálogo', badge: 'catálogo', cls: 'badge-catalog' },
-          { type: 'manual', icon: '🎯', title: 'Manual', badge: 'clássico', cls: 'badge-popular' },
+          { type: 'smart-spark', icon: '🔥', title: 'Smart+ V2', badge: 'novo', cls: 'badge-new' },
+          { type: 'smart-catalog', icon: '⚡', title: 'Smart+ V1', badge: 'legado', cls: 'badge-popular' },
+          { type: 'manual', icon: '🎯', title: 'Manual', badge: 'clássico', cls: 'badge-catalog' },
         ] as const).map(c => (
           <div key={c.type} onClick={() => setCampaignType(c.type as any)}
             className={`bg-hawk-card border-2 rounded-xl p-4 cursor-pointer transition-all relative ${campaignType === c.type ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500'}`}>
