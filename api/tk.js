@@ -629,8 +629,7 @@ export default async function handler(req, res) {
           var scheduleStart = body.schedule_start
             ? body.schedule_start
             : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
-          var baseCpa = parseFloat(body.target_cpa) || 55
-          var humanCpa = humanizeValue(baseCpa, 10)
+          var exactCpa = parseFloat(body.target_cpa) || 55
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
 
           // ── V2 AdGroup: targeting_optimization_mode + bid_type flexível ──
@@ -650,11 +649,11 @@ export default async function handler(req, res) {
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
           }
-          // Cost Cap: enviar conversion_bid_price
+          // Cost Cap: valor exato (sem randomização)
           if (useBidType === 'BID_TYPE_CUSTOM') {
-            agPayload.conversion_bid_price = humanCpa
+            agPayload.conversion_bid_price = exactCpa
           }
-          L(advId, 'AdGroup: bid=' + useBidType + (useBidType === 'BID_TYPE_CUSTOM' ? ' cpa=' + humanCpa : ' (max delivery)'))
+          L(advId, 'AdGroup: bid=' + useBidType + (useBidType === 'BID_TYPE_CUSTOM' ? ' cpa=' + exactCpa : ' (max delivery)'))
           var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
           if (agRes.code !== 0) {
             L(advId, '❌ AdGroup: ' + agRes.message)
