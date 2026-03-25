@@ -10,6 +10,7 @@ const nav = [
   { icon: '🎬', label: 'Criativos', path: '/creatives' },
   { icon: '🔗', label: 'Identities', path: '/identities' },
   { icon: '📡', label: 'Pixels', path: '/pixels' },
+  { icon: '🛡️', label: 'Proxies', path: '/proxies' },
   { section: 'Sistema' },
   { icon: '⚙️', label: 'Configurações', path: '/settings' },
   { icon: '📜', label: 'Logs', path: '/logs' },

@@ -5,6 +5,7 @@ import Topbar from '@/components/Topbar'
 import Dashboard from '@/pages/Dashboard'
 import Launch from '@/pages/Launch'
 import { Campaigns, Accounts, Creatives, Identities, Pixels, Settings, Logs } from '@/pages/Pages'
+import Proxies from '@/pages/Proxies'
 import { useAppStore } from '@/store'
 import { setToken } from '@/lib/api'
 
@@ -83,6 +84,7 @@ export default function App() {
               <Route path="/creatives" element={<Creatives />} />
               <Route path="/identities" element={<Identities />} />
               <Route path="/pixels" element={<Pixels />} />
+              <Route path="/proxies" element={<Proxies />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="*" element={<Dashboard />} />
