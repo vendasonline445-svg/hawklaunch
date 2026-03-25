@@ -237,19 +237,36 @@ export default async function handler(req, res) {
       var body = req.body
       var advId = body && body.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token)
+
+      // Usa proxy específico desta conta para não correlacionar com outras
+      var proxyRaw = (body && body.proxy) || null
+
+      // Busca campanhas — uma página, 100 por vez
+      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
       if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, deleted: 0 })
       var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
       if (camps.length === 0) return res.json({ code: 0, data: { deleted: 0, total: 0 } })
-      var campIds = camps.map(function(c) { return c.campaign_id })
+
       var deleted = 0; var errors = []
-      for (var i = 0; i < campIds.length; i += 20) {
-        var batch = campIds.slice(i, i + 20)
-        var delRes = await tt('/campaign/status/update/', token, 'POST', { advertiser_id: advId, campaign_ids: batch, operation_status: 'DELETE' })
-        if (delRes.code === 0) deleted += batch.length
-        else errors.push(delRes.message || 'unknown')
-        if (i + 20 < campIds.length) await rndDelay(500, 1000)
+
+      // Deleta UMA campanha por vez com delay humano — nunca em bulk
+      for (var i = 0; i < camps.length; i++) {
+        var campId = camps[i].campaign_id
+        // Delay humano entre cada delete: 3-8 segundos
+        if (i > 0) await rndDelay(3000, 8000)
+        try {
+          var delRes = await tt('/campaign/status/update/', token, 'POST', {
+            advertiser_id: advId,
+            campaign_ids: [campId],
+            operation_status: 'DELETE'
+          }, proxyRaw)
+          if (delRes.code === 0) deleted++
+          else errors.push(campId + ': ' + (delRes.message || 'unknown'))
+        } catch(e) {
+          errors.push(campId + ': ' + e.message)
+        }
       }
+
       return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
     }
 

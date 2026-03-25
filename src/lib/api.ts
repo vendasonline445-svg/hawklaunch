@@ -46,9 +46,9 @@ export var api = {
     body: JSON.stringify(payload),
   }),
 
-  deleteCampaigns: (advertiserId: string) => request('a=delete_campaigns', {
+  deleteCampaigns: (advertiserId: string, proxy?: string) => request('a=delete_campaigns', {
     method: 'POST',
-    body: JSON.stringify({ advertiser_id: advertiserId }),
+    body: JSON.stringify({ advertiser_id: advertiserId, proxy: proxy || null }),
   }),
 
   launchManual: (payload: any) => request('a=launch_manual', {

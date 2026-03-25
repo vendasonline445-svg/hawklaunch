@@ -88,21 +88,56 @@ function StepAccounts() {
 
   const accountsWithCampaign = accounts.filter(a => campaignStatus[a.advertiser_id] === true)
 
+  const [deleteLog, setDeleteLog] = useState<string[]>([])
+  const addDeleteLog = (msg: string) => setDeleteLog(prev => [...prev, msg])
+
   async function deleteCampaignsFromSelected() {
     const targets = [...selected].filter(id => campaignStatus[id] === true)
     if (targets.length === 0) return
     setDeleting(true)
+    setDeleteLog([])
     setDeleteProgress({ done: 0, total: targets.length, errors: 0 })
+
+    // Lê proxies configuradas para usar uma por conta
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '')
+      .split('\n').map(p => p.trim()).filter(Boolean)
+
     let errors = 0
     for (let i = 0; i < targets.length; i++) {
+      const advId = targets[i]
+      const acc = accounts.find(a => a.advertiser_id === advId)
+      const accName = acc?.advertiser_name || advId
+      const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
+
+      addDeleteLog('━━━ (' + (i+1) + '/' + targets.length + ') ' + accName)
+      if (proxy) addDeleteLog('🛡️ Proxy: ' + proxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+
       try {
-        await api.deleteCampaigns(targets[i])
-      } catch { errors++ }
+        const r = await api.deleteCampaigns(advId, proxy)
+        if ((r as any).code === 0) {
+          const d = (r as any).data
+          addDeleteLog('✅ ' + d.deleted + '/' + d.total + ' campanha(s) deletada(s)')
+          if (d.errors && d.errors.length) d.errors.forEach((e: string) => addDeleteLog('⚠️ ' + e))
+        } else {
+          addDeleteLog('❌ ' + ((r as any).message || 'Erro'))
+          errors++
+        }
+      } catch(e: any) {
+        addDeleteLog('❌ ' + e.message)
+        errors++
+      }
+
       setDeleteProgress({ done: i + 1, total: targets.length, errors })
-      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 800))
+
+      // Delay humano entre contas: 20-35 segundos para não correlacionar requests
+      if (i < targets.length - 1) {
+        const wait = Math.floor(Math.random() * 15000) + 20000
+        addDeleteLog('⏳ Aguardando ' + Math.round(wait/1000) + 's antes da próxima conta...')
+        await new Promise(r => setTimeout(r, wait))
+      }
     }
+
     setDeleting(false)
-    setShowDeleteModal(false)
     loadAccounts()
   }
 
@@ -121,19 +156,22 @@ function StepAccounts() {
               <span className="text-2xl">🗑️</span>
               <h3 className="text-lg font-bold">Deletar campanhas</h3>
             </div>
-            {!deleting ? (
+            {!deleting && deleteLog.length === 0 ? (
               <>
                 <p className="text-sm text-gray-400 mb-2">
                   Serão deletadas <strong className="text-white">todas as campanhas</strong> das contas abaixo:
                 </p>
-                <div className="max-h-[180px] overflow-y-auto mb-4 space-y-1">
+                <div className="max-h-[160px] overflow-y-auto mb-3 space-y-1">
                   {[...selected].filter(id => campaignStatus[id] === true).map(id => {
                     const acc = accounts.find(a => a.advertiser_id === id)
                     return <div key={id} className="flex items-center gap-2 px-3 py-1.5 bg-hawk-input rounded text-xs"><span className="text-orange-400">⚠</span><span className="truncate">{acc?.advertiser_name || id}</span></div>
                   })}
                 </div>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mb-3">
+                  🛡️ Cada conta será processada individualmente com delays de 20-35s e proxy dedicada para não acionar o antifraude.
+                </div>
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-300 mb-5">
-                  Esta ação é irreversível. As campanhas serão marcadas como DELETADAS no TikTok Ads.
+                  ⚠️ Irreversível — campanhas serão marcadas como DELETADAS no TikTok Ads.
                 </div>
                 <div className="flex gap-3">
                   <button className="btn btn-secondary flex-1" onClick={() => setShowDeleteModal(false)}>Cancelar</button>
@@ -144,15 +182,23 @@ function StepAccounts() {
                 </div>
               </>
             ) : (
-              <div className="py-4">
+              <div className="py-2">
                 <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-                  <span>Deletando campanhas...</span>
-                  <span>{deleteProgress.done}/{deleteProgress.total}</span>
+                  <span>{deleting ? '🗑️ Deletando...' : '✅ Concluído'}</span>
+                  <span>{deleteProgress.done}/{deleteProgress.total} contas</span>
                 </div>
                 <div className="h-2 bg-hawk-input rounded-full overflow-hidden mb-3">
-                  <div className="h-full bg-red-500 rounded-full transition-all" style={{width: (deleteProgress.done / deleteProgress.total * 100) + '%'}} />
+                  <div className={'h-full rounded-full transition-all ' + (deleting ? 'bg-red-500' : 'bg-green-500')}
+                    style={{width: deleteProgress.total > 0 ? (deleteProgress.done / deleteProgress.total * 100) + '%' : '0%'}} />
                 </div>
-                {deleteProgress.errors > 0 && <p className="text-xs text-yellow-400">⚠ {deleteProgress.errors} erro(s)</p>}
+                <div className="max-h-[200px] overflow-y-auto space-y-0.5 bg-hawk-bg rounded-lg p-3 font-mono text-[11px]">
+                  {deleteLog.map((l, i) => (
+                    <div key={i} className={'leading-relaxed ' + (l.startsWith('✅') ? 'text-green-400' : l.startsWith('❌') ? 'text-red-400' : l.startsWith('⚠') ? 'text-yellow-400' : l.startsWith('⏳') ? 'text-gray-500' : l.startsWith('🛡') ? 'text-blue-400' : 'text-gray-300')}>{l}</div>
+                  ))}
+                </div>
+                {!deleting && (
+                  <button className="btn btn-primary w-full mt-4" onClick={() => { setShowDeleteModal(false); setDeleteLog([]) }}>Fechar</button>
+                )}
               </div>
             )}
           </div>
