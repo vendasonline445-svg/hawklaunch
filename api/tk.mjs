@@ -130,11 +130,29 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
   return r.json()
 }
 
+// Erros que não adianta tentar de novo — falha permanente
+function isPermanentError(result) {
+  if (!result) return false
+  var msg = (result.message || '').toLowerCase()
+  // Sem permissão para a conta
+  if (result.code === 40002) return true
+  if (msg.includes('no permission')) return true
+  if (msg.includes('permission denied')) return true
+  // Conta suspensa / inativa
+  if (msg.includes('advertiser status') && msg.includes('not')) return true
+  if (msg.includes('account is banned')) return true
+  // Token inválido
+  if (result.code === 40001) return true
+  return false
+}
+
 async function tt(endpoint, token, method, body, proxyRaw) {
   var lastErr = ''
   for (var attempt = 1; attempt <= 3; attempt++) {
     try {
       var result = await ttOnce(endpoint, token, method, body, proxyRaw)
+      // Erro permanente — não tenta de novo
+      if (isPermanentError(result)) return result
       // TikTok retorna code !== 0 em erros de rate limit — retry nesses casos
       if (result && (result.code === 40100 || result.code === 50001 || result.code === 50002)) {
         lastErr = 'TikTok ' + result.code + ': ' + (result.message || '')
@@ -156,6 +174,8 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
     if (attempt > 1) await new Promise(r => setTimeout(r, 2000 * attempt))
     try {
       var authRes = await tt('/tt_video/authorize/', token, 'POST', { advertiser_id: advertiserId, auth_code: authCode }, proxyRaw)
+      // Erro permanente — não tenta de novo
+      if (isPermanentError(authRes)) return { ok: false, error: authRes.message || 'permission denied', permanent: true }
       var identityId = (authRes.data && authRes.data.identity_id) ? authRes.data.identity_id : null
       if (authRes.code !== 0 || !identityId) {
         lastError = authRes.message || 'authorize failed'
@@ -379,6 +399,7 @@ export default async function handler(req, res) {
         sparkAuthCache[advId] = {}
         var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
 
+        var noPermission = false
         for (var s = 0; s < codesForAccount.length; s++) {
           var code = codesForAccount[s]
           L(advId, 'Spark ' + (s+1) + '/' + codesForAccount.length + ': authorize...')
@@ -391,11 +412,18 @@ export default async function handler(req, res) {
             } else {
               L(advId, '⚠️ ' + sr.error)
               results.errors.push({ account: advId, step: 'spark', error: sr.error })
+              if (sr.permanent) { noPermission = true; break }
             }
           } catch(e) {
             L(advId, '❌ ' + e.message)
             results.errors.push({ account: advId, step: 'spark', error: e.message })
           }
+        }
+
+        // Sem permissão para esta conta — pula imediatamente
+        if (noPermission) {
+          L(advId, '⛔ Sem permissão — conta ignorada')
+          continue
         }
 
         var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
@@ -415,6 +443,11 @@ export default async function handler(req, res) {
             } else {
               L(advId, '⚠️ CTA: ' + cta.error)
               results.errors.push({ account: advId, step: 'cta', error: cta.error })
+              // Sem permissão no CTA = sem permissão na conta, pula
+              if (cta.error && cta.error.toLowerCase().includes('permission')) {
+                L(advId, '⛔ Sem permissão — conta ignorada')
+                noPermission = true
+              }
             }
           } catch(e) {
             L(advId, '❌ CTA error: ' + e.message)
@@ -426,6 +459,8 @@ export default async function handler(req, res) {
 
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
+        // Pula conta sem permissão
+        if (noPermission) { noPermission = false; continue }
         var accountSparks = sparkAuthCache[advId] || {}
         var ctaId = ctaCache[advId] || null
         var pixelId = body.pixel_id || null
@@ -574,6 +609,7 @@ export default async function handler(req, res) {
         var sparkAuthCache = {}
 
         // Spark authorization (AUTH_CODE identity only)
+        var noPermissionM = false
         if (body.identity_type === 'AUTH_CODE' && body.spark_codes && body.spark_codes.length > 0) {
           var codesForAccount = body.rotation ? [body.spark_codes[accountIndex % body.spark_codes.length]] : body.spark_codes
           for (var s = 0; s < codesForAccount.length; s++) {
@@ -587,6 +623,7 @@ export default async function handler(req, res) {
               } else {
                 L(advId, '⚠️ ' + sr.error)
                 results.errors.push({ account: advId, step: 'spark', error: sr.error })
+                if (sr.permanent) { noPermissionM = true; break }
               }
             } catch(e) {
               L(advId, '❌ ' + e.message)
@@ -594,6 +631,7 @@ export default async function handler(req, res) {
             }
           }
         }
+        if (noPermissionM) { L(advId, '⛔ Sem permissão — conta ignorada'); continue }
 
         // Pixel (only needed for CONVERSIONS objective)
         var pixelId = body.pixel_id || null
@@ -815,6 +853,48 @@ export default async function handler(req, res) {
       }
 
       return res.json({ ok: true, deleted: deleted, total: allIds.length, errors: errors })
+    }
+
+    if (action === 'create_account' && req.method === 'POST') {
+      var body = req.body || {}
+      var bcId = body.bc_id
+      var acc = body.account || {}
+      if (!bcId) return res.status(400).json({ error: 'bc_id required' })
+      if (!acc.name) return res.status(400).json({ error: 'account.name required' })
+
+      var proxy = parseProxy(body.proxy || null)
+
+      var company = acc.company || acc.name
+      var website = acc.website || body.default_website || ''
+      var currency = body.currency || 'BRL'
+      var country = body.country || 'BR'
+
+      var payload = {
+        bc_id: bcId,
+        advertiser_info: {
+          name: acc.name,
+          currency: currency,
+          timezone: body.timezone || 'America/Sao_Paulo',
+          industry: body.industry || 290001,
+          country: country,
+          company: company,
+          promotional_url: website,
+        },
+        customer_info: {
+          company: company,
+          website: website,
+          industry: body.industry || 290001,
+          registered_area: country,
+        },
+        billing_info: {
+          bill_to: company,
+          country: country,
+          currency: currency,
+        }
+      }
+
+      var result = await tt('/bc/advertiser/create/', token, 'POST', payload, proxy)
+      return res.json(result)
     }
 
     if (action === 'auth' && req.method === 'POST') {
