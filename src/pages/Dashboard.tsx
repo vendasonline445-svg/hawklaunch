@@ -147,33 +147,13 @@ export default function Dashboard() {
     setShowCloseModal(true)
   }
 
-  async function runClose() {
+  function openAccountsInTikTok() {
     const toClose = accounts.filter((a: any) => selectedForClose.has(a.advertiser_id))
-    if (toClose.length === 0) return
-    setCloseStep('closing')
-    setCloseLogs([])
-    setCloseProgress(0)
-
-    const ids = toClose.map((a: any) => a.advertiser_id)
-    try {
-      const r = await api.removeBcAccounts(bcId, ids) as any
-      if (r.code === 0 && r.data) {
-        const removedSet = new Set(r.data.removed || [])
-        const logs = toClose.map((a: any) => ({
-          id: a.advertiser_id,
-          name: a.advertiser_name || a.name || a.advertiser_id,
-          ok: removedSet.has(a.advertiser_id),
-          error: (r.data.errors || []).find((e: any) => e.id === a.advertiser_id)?.error,
-        }))
-        setCloseLogs(logs)
-      } else {
-        setCloseLogs(toClose.map((a: any) => ({ id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, ok: false, error: r.message || 'Erro' })))
-      }
-    } catch(e: any) {
-      setCloseLogs(toClose.map((a: any) => ({ id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, ok: false, error: e.message })))
-    }
-    setCloseProgress(100)
-    setCloseStep('done')
+    toClose.forEach((a: any, i: number) => {
+      setTimeout(() => {
+        window.open(`https://ads.tiktok.com/i18n/account/settings?aadvid=${a.advertiser_id}`, '_blank')
+      }, i * 400)
+    })
   }
 
   const filteredAccounts = accounts.filter(a => {
@@ -442,103 +422,76 @@ export default function Dashboard() {
           <div className="bg-hawk-card border border-hawk-border rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between p-5 border-b border-hawk-border">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-red-500/15 rounded-lg flex items-center justify-center text-lg">🔒</div>
+                <div className="w-9 h-9 bg-orange-500/15 rounded-lg flex items-center justify-center text-lg">🔒</div>
                 <div>
                   <h2 className="font-bold text-base">Fechar Contas do BC</h2>
-                  <p className="text-[11px] text-gray-500">Remove as ad accounts do Business Center</p>
+                  <p className="text-[11px] text-gray-500">Abre cada conta no TikTok Ads Manager para fechar manualmente</p>
                 </div>
               </div>
-              {(closeStep === 'confirm' || closeStep === 'done') && (
-                <button onClick={() => setShowCloseModal(false)} className="text-gray-500 hover:text-white text-lg">✕</button>
-              )}
+              <button onClick={() => setShowCloseModal(false)} className="text-gray-500 hover:text-white text-lg">✕</button>
             </div>
 
             <div className="p-5">
-              {closeStep === 'confirm' && (
-                <>
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex gap-2 mb-4">
-                    <span className="text-base">⚠️</span>
-                    <p className="text-[12px] text-red-300">
-                      Esta ação <strong>remove as contas do BC</strong> via API TikTok.<br />
-                      Necessário antes de desativar o Business Center.
-                    </p>
-                  </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 flex gap-2 mb-4">
+                <span className="text-base">ℹ️</span>
+                <p className="text-[12px] text-yellow-200">
+                  A API do TikTok <strong>não permite fechar contas programaticamente</strong>.<br />
+                  Use o botão abaixo para abrir todas as contas no Ads Manager e feche manualmente:<br />
+                  <span className="text-yellow-400 font-mono">Settings → Account Settings → Close Account</span>
+                </p>
+              </div>
 
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="label">{accounts.length} conta(s) no BC</span>
-                    <div className="flex gap-2">
-                      <button className="text-[11px] text-hawk-accent hover:underline" onClick={() => setSelectedForClose(new Set(accounts.map((a: any) => a.advertiser_id)))}>Todas</button>
-                      <span className="text-gray-600">·</span>
-                      <button className="text-[11px] text-gray-400 hover:underline" onClick={() => setSelectedForClose(new Set())}>Nenhuma</button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 max-h-[280px] overflow-y-auto mb-5">
-                    {accounts.map((a: any) => {
-                      const id = a.advertiser_id
-                      const name = a.advertiser_name || a.name || id
-                      const isSelected = selectedForClose.has(id)
-                      return (
-                        <div key={id} onClick={() => {
-                          const n = new Set(selectedForClose)
-                          n.has(id) ? n.delete(id) : n.add(id)
-                          setSelectedForClose(n)
-                        }} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border transition-colors ${isSelected ? 'border-red-500/50 bg-red-500/8' : 'border-hawk-border hover:border-gray-500'}`}>
-                          <div className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'border-hawk-border'}`}>
-                            {isSelected ? '✓' : ''}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[12px] font-semibold truncate">{name}</div>
-                            <div className="text-[10px] text-gray-500 font-mono">{id}</div>
-                          </div>
-                          <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
-                            {(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'ATIVA' : 'INATIVA'}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <button
-                    onClick={runClose}
-                    disabled={selectedForClose.size === 0}
-                    className="btn btn-danger w-full disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    🔒 Fechar {selectedForClose.size} conta(s) do BC
-                  </button>
-                </>
-              )}
-
-              {closeStep === 'closing' && (
-                <div className="text-center py-8">
-                  <div className="text-3xl mb-3 animate-pulse">🔒</div>
-                  <p className="text-sm text-gray-300">Removendo contas do BC...</p>
+              <div className="flex items-center justify-between mb-2">
+                <span className="label">{accounts.length} conta(s) no BC</span>
+                <div className="flex gap-2">
+                  <button className="text-[11px] text-hawk-accent hover:underline" onClick={() => setSelectedForClose(new Set(accounts.map((a: any) => a.advertiser_id)))}>Todas</button>
+                  <span className="text-gray-600">·</span>
+                  <button className="text-[11px] text-gray-400 hover:underline" onClick={() => setSelectedForClose(new Set())}>Nenhuma</button>
                 </div>
-              )}
+              </div>
 
-              {closeStep === 'done' && (
-                <div>
-                  <div className="text-center py-4 mb-4">
-                    <div className="text-3xl mb-2">{closeLogs.every(l => l.ok) ? '✅' : '⚠️'}</div>
-                    <p className="text-sm font-semibold">
-                      {closeLogs.filter(l => l.ok).length} conta(s) removidas do BC
-                    </p>
-                    {closeLogs.some(l => !l.ok) && (
-                      <p className="text-xs text-red-400 mt-1">{closeLogs.filter(l => !l.ok).length} com erro</p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5 max-h-[240px] overflow-y-auto mb-4">
-                    {closeLogs.map((l, i) => (
-                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
-                        <span>{l.ok ? '✅' : '❌'}</span>
-                        <span className="flex-1 truncate font-semibold">{l.name}</span>
-                        <span className="text-gray-400 font-mono text-[10px]">{l.ok ? 'removida' : (l.error || 'erro')}</span>
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto mb-5">
+                {accounts.map((a: any) => {
+                  const id = a.advertiser_id
+                  const name = a.advertiser_name || a.name || id
+                  const isSelected = selectedForClose.has(id)
+                  return (
+                    <div key={id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${isSelected ? 'border-orange-500/40 bg-orange-500/5' : 'border-hawk-border'}`}>
+                      <div onClick={() => {
+                        const n = new Set(selectedForClose)
+                        n.has(id) ? n.delete(id) : n.add(id)
+                        setSelectedForClose(n)
+                      }} className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] flex-shrink-0 cursor-pointer ${isSelected ? 'bg-orange-500 border-orange-500 text-white' : 'border-hawk-border'}`}>
+                        {isSelected ? '✓' : ''}
                       </div>
-                    ))}
-                  </div>
-                  <button onClick={() => { setShowCloseModal(false); api.getBcAdvertisers(bcId).then(r => setAccounts(r.data?.list || [])) }} className="btn btn-primary w-full">Fechar</button>
-                </div>
-              )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-semibold truncate">{name}</div>
+                        <div className="text-[10px] text-gray-500 font-mono">{id}</div>
+                      </div>
+                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0 ${(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'bg-green-500/15 text-green-400' : 'bg-gray-500/15 text-gray-400'}`}>
+                        {(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'ATIVA' : 'INATIVA'}
+                      </div>
+                      <a
+                        href={`https://ads.tiktok.com/i18n/account/settings?aadvid=${id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[10px] text-hawk-accent hover:underline flex-shrink-0"
+                      >
+                        Abrir ↗
+                      </a>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <button
+                onClick={openAccountsInTikTok}
+                disabled={selectedForClose.size === 0}
+                className="btn btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                🔗 Abrir {selectedForClose.size} conta(s) no TikTok Ads Manager
+              </button>
             </div>
           </div>
         </div>
