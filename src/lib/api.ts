@@ -60,4 +60,14 @@ export var api = {
     method: 'POST',
     body: JSON.stringify({ proxy }),
   }),
+
+  createAccounts: (payload: any) => request('a=create_accounts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  removeBcAccounts: (bcId: string, advertiserIds: string[]) => request('a=remove_bc_accounts', {
+    method: 'POST',
+    body: JSON.stringify({ bc_id: bcId, advertiser_ids: advertiserIds }),
+  }),
 }

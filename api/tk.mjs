@@ -290,6 +290,23 @@ export default async function handler(req, res) {
       return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
     }
 
+    if (action === 'remove_bc_accounts' && req.method === 'POST') {
+      var body = req.body
+      var bcId = body && body.bc_id
+      var advIds = body && body.advertiser_ids
+      if (!bcId || !Array.isArray(advIds) || advIds.length === 0) return res.status(400).json({ error: 'bc_id and advertiser_ids required' })
+      var removed = []; var errors = []
+      for (var i = 0; i < advIds.length; i++) {
+        try {
+          var r = await tt('/bc/asset/admin/delete/', token, 'POST', { bc_id: bcId, asset_type: 'ADVERTISER', asset_ids: [advIds[i]] })
+          if (r.code === 0) removed.push(advIds[i])
+          else errors.push({ id: advIds[i], error: r.message || 'unknown' })
+        } catch(e) { errors.push({ id: advIds[i], error: e.message }) }
+        if (i < advIds.length - 1) await rndDelay(1500, 3000)
+      }
+      return res.json({ code: 0, data: { removed, errors } })
+    }
+
     if (action === 'bc_list') return res.json(await tt('/bc/get/?page_size=50', token))
 
     if (action === 'bc_advertisers') {
