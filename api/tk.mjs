@@ -296,13 +296,15 @@ export default async function handler(req, res) {
       var advIds = body && body.advertiser_ids
       if (!bcId || !Array.isArray(advIds) || advIds.length === 0) return res.status(400).json({ error: 'bc_id and advertiser_ids required' })
       var removed = []; var errors = []
-      for (var i = 0; i < advIds.length; i++) {
+      // Envia em lotes de 20 para não exceder limites da API
+      var BATCH = 20
+      for (var i = 0; i < advIds.length; i += BATCH) {
+        var batch = advIds.slice(i, i + BATCH)
         try {
-          var r = await tt('/bc/asset/admin/delete/', token, 'POST', { bc_id: bcId, asset_type: 'ADVERTISER', asset_ids: [advIds[i]] })
-          if (r.code === 0) removed.push(advIds[i])
-          else errors.push({ id: advIds[i], error: r.message || 'unknown' })
-        } catch(e) { errors.push({ id: advIds[i], error: e.message }) }
-        if (i < advIds.length - 1) await rndDelay(1500, 3000)
+          var r = await tt('/bc/asset/admin/delete/', token, 'POST', { bc_id: bcId, asset_type: 'ADVERTISER', asset_ids: batch })
+          if (r.code === 0) removed.push(...batch)
+          else batch.forEach(function(id) { errors.push({ id: id, error: r.message || 'unknown' }) })
+        } catch(e) { batch.forEach(function(id) { errors.push({ id: id, error: e.message }) }) }
       }
       return res.json({ code: 0, data: { removed, errors } })
     }
