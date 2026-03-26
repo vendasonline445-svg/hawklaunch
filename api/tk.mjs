@@ -25,17 +25,24 @@ function randomUA() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
 }
 
-// request_id humano: timestamp com jitter + sufixo alfanumérico
+// request_id humano: timestamp com jitter variável + sufixo de comprimento variável
 function makeRequestId() {
-  // TikTok exige int64 como string — usa timestamp + sufixo numérico aleatório
-  var jitter = Math.floor(Math.random() * 999) + 1
-  var suffix = Math.floor(Math.random() * 9000) + 1000
-  return String(Date.now() - jitter) + String(suffix)
+  // Jitter entre 50ms e 3200ms — simula latência de rede e processamento real
+  var jitter = 50 + Math.floor(Math.random() * 3150)
+  var ts = Date.now() - jitter
+  // Sufixo com comprimento variável (3 a 6 dígitos) — evita padrão fixo de 4 dígitos
+  var suffixLen = 3 + Math.floor(Math.random() * 4)
+  var lo = Math.pow(10, suffixLen - 1)
+  var hi = Math.pow(10, suffixLen) - 1
+  var suffix = lo + Math.floor(Math.random() * (hi - lo + 1))
+  return String(ts) + String(suffix)
 }
 
-// delay aleatório entre min e max ms
+// delay com distribuição triangular — mais próxima do comportamento humano que uniforme pura
+// (média de 2 uniformes cria pico no centro, com caudas naturais nos extremos)
 function rndDelay(min, max) {
-  return new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+  var val = min + ((Math.random() + Math.random()) / 2) * (max - min)
+  return new Promise(r => setTimeout(r, Math.floor(val)))
 }
 
 function humanizeValue(base, pct) {

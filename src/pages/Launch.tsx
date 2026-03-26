@@ -775,7 +775,7 @@ function StepLaunch() {
     const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')
     let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
     let allErrors: any[] = []
-    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
 
     try {
       const payload = {
@@ -888,7 +888,7 @@ function StepLaunch() {
     setProgress(5)
 
     const scheduleStart = buildScheduleStart()
-    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min))
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
     let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
     let allErrors: any[] = []
 
