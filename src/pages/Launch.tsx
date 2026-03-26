@@ -807,8 +807,10 @@ function StepLaunch() {
         if (abortRef.current) { addLog('WARN', '⛔ Lançamento interrompido pelo usuário'); break }
         if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
 
+        let accountNoPermission = false
         for (let cp = 0; cp < campsPerAcc; cp++) {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+          if (accountNoPermission) break
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
@@ -829,7 +831,12 @@ function StepLaunch() {
                 const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
                 addLog(cat, l.message)
               })
-              if (d.errors) allErrors.push(...d.errors)
+              if (d.errors) {
+                allErrors.push(...d.errors)
+                if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
+                  accountNoPermission = true
+                }
+              }
             } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
           } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
         }
@@ -930,8 +937,10 @@ function StepLaunch() {
         if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
         if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
 
+        let accountNoPermission = false
         for (let cp = 0; cp < campsPerAcc; cp++) {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+          if (accountNoPermission) break
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
@@ -947,7 +956,12 @@ function StepLaunch() {
                 const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
                 addLog(cat, l.message)
               })
-              if (d.errors) allErrors.push(...d.errors)
+              if (d.errors) {
+                allErrors.push(...d.errors)
+                if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
+                  accountNoPermission = true
+                }
+              }
             } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
           } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
         }
