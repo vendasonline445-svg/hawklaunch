@@ -24,6 +24,14 @@ export default function Dashboard() {
   const [deleteProgress, setDeleteProgress] = useState(0)
   const deleteAbort = useRef(false)
 
+  // Disable campaigns modal state
+  const [showDisableModal, setShowDisableModal] = useState(false)
+  const [disableStep, setDisableStep] = useState<'confirm' | 'disabling' | 'done'>('confirm')
+  const [selectedForDisable, setSelectedForDisable] = useState<Set<string>>(new Set())
+  const [disableLogs, setDisableLogs] = useState<{ id: string; name: string; disabled: number; total: number; ok: boolean; error?: string }[]>([])
+  const [disableProgress, setDisableProgress] = useState(0)
+  const disableAbort = useRef(false)
+
   // Close accounts modal state
   const [showCloseModal, setShowCloseModal] = useState(false)
   const [closeStep, setCloseStep] = useState<'confirm' | 'closing' | 'done'>('confirm')
@@ -139,6 +147,37 @@ export default function Dashboard() {
     setDeleteStep('done')
   }
 
+  async function runDisable() {
+    const toDisable = accounts.filter((a: any) => selectedForDisable.has(a.advertiser_id))
+    if (toDisable.length === 0) return
+    setDisableStep('disabling')
+    setDisableLogs([])
+    setDisableProgress(0)
+    disableAbort.current = false
+
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '')
+      .split('\n').map((p: string) => p.trim()).filter(Boolean)
+
+    for (let i = 0; i < toDisable.length; i++) {
+      if (disableAbort.current) break
+      const a = toDisable[i]
+      const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
+      try {
+        const r = await api.disableCampaigns(a.advertiser_id, proxy) as any
+        if (r.code === 0) {
+          const d = r.data
+          setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: d.disabled || 0, total: d.total || 0, ok: true }])
+        } else {
+          setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: r.message || 'Erro' }])
+        }
+      } catch(e: any) {
+        setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: e.message }])
+      }
+      setDisableProgress(Math.round(((i + 1) / toDisable.length) * 100))
+    }
+    setDisableStep('done')
+  }
+
   function openCloseModal() {
     setCloseStep('confirm')
     setCloseLogs([])
@@ -196,6 +235,7 @@ export default function Dashboard() {
             <div className="flex gap-2">
               {accounts.length > 0 && (
                 <>
+                  <button onClick={() => { setDisableStep('confirm'); setSelectedForDisable(new Set(accounts.map((a: any) => a.advertiser_id))); setDisableLogs([]); setDisableProgress(0); setShowDisableModal(true) }} className="btn btn-secondary btn-sm">⏸️ Desativar Campanhas</button>
                   <button onClick={openDeleteModal} className="btn btn-secondary btn-sm">🗑️ Deletar Campanhas</button>
                   <button onClick={openCloseModal} className="btn btn-danger btn-sm">🔒 Fechar Contas do BC</button>
                 </>
@@ -409,6 +449,130 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <button onClick={() => setShowDeleteModal(false)} className="btn btn-primary w-full">Fechar</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable Campaigns Modal */}
+      {showDisableModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-hawk-card border border-hawk-border rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-hawk-border">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-yellow-500/15 rounded-lg flex items-center justify-center text-lg">⏸️</div>
+                <div>
+                  <h2 className="font-bold text-base">Desativar Campanhas</h2>
+                  <p className="text-[11px] text-gray-500">Pausa todas as campanhas ativas — reversível</p>
+                </div>
+              </div>
+              {(disableStep === 'confirm' || disableStep === 'done') && (
+                <button onClick={() => setShowDisableModal(false)} className="text-gray-500 hover:text-white text-lg">✕</button>
+              )}
+            </div>
+
+            <div className="p-5">
+              {disableStep === 'confirm' && (
+                <>
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 flex gap-2 mb-4">
+                    <span className="text-base">⚠️</span>
+                    <p className="text-[12px] text-yellow-200">
+                      As campanhas serão <strong>pausadas</strong> (não deletadas).<br />
+                      Você pode reativá-las a qualquer momento no TikTok Ads Manager.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="label">{accounts.length} conta(s)</span>
+                    <div className="flex gap-2">
+                      <button className="text-[11px] text-hawk-accent hover:underline" onClick={() => setSelectedForDisable(new Set(accounts.map((a: any) => a.advertiser_id)))}>Todas</button>
+                      <span className="text-gray-600">·</span>
+                      <button className="text-[11px] text-gray-400 hover:underline" onClick={() => setSelectedForDisable(new Set())}>Nenhuma</button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto mb-5">
+                    {accounts.map((a: any) => {
+                      const id = a.advertiser_id
+                      const name = a.advertiser_name || a.name || id
+                      const isSelected = selectedForDisable.has(id)
+                      return (
+                        <div key={id} onClick={() => {
+                          const n = new Set(selectedForDisable)
+                          n.has(id) ? n.delete(id) : n.add(id)
+                          setSelectedForDisable(n)
+                        }} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border transition-colors ${isSelected ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-hawk-border hover:border-gray-500'}`}>
+                          <div className={`w-4 h-4 border-2 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${isSelected ? 'bg-yellow-500 border-yellow-500 text-white' : 'border-hawk-border'}`}>
+                            {isSelected ? '✓' : ''}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold truncate">{name}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">{id}</div>
+                          </div>
+                          <div className={`text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0 ${(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'bg-green-500/15 text-green-400' : 'bg-gray-500/15 text-gray-400'}`}>
+                            {(a.status === 'STATUS_ENABLE' || a.status === 'ENABLE') ? 'ATIVA' : 'INATIVA'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    onClick={runDisable}
+                    disabled={selectedForDisable.size === 0}
+                    className="btn w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ⏸️ Desativar campanhas de {selectedForDisable.size} conta(s)
+                  </button>
+                </>
+              )}
+
+              {disableStep === 'disabling' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold">Desativando...</span>
+                    <span className="text-xs text-gray-400">{disableProgress}%</span>
+                  </div>
+                  <div className="w-full bg-hawk-border rounded-full h-1.5 mb-4">
+                    <div className="bg-yellow-500 h-1.5 rounded-full transition-all" style={{ width: disableProgress + '%' }} />
+                  </div>
+                  <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+                    {disableLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '⏸️' : '❌'}</span>
+                        <span className="flex-1 truncate font-semibold">{l.name}</span>
+                        <span className="text-gray-400 font-mono">{l.ok ? l.disabled + '/' + l.total + ' pausadas' : l.error || 'erro'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => { disableAbort.current = true }} className="btn btn-secondary w-full mt-4 text-xs">⛔ Interromper</button>
+                </div>
+              )}
+
+              {disableStep === 'done' && (
+                <div>
+                  <div className="text-center py-4 mb-4">
+                    <div className="text-3xl mb-2">⏸️</div>
+                    <p className="text-sm font-semibold">
+                      {disableLogs.reduce((s, l) => s + l.disabled, 0)} campanha(s) pausadas
+                      {' '}em {disableLogs.filter(l => l.ok).length} conta(s)
+                    </p>
+                    {disableLogs.some(l => !l.ok) && (
+                      <p className="text-xs text-red-400 mt-1">{disableLogs.filter(l => !l.ok).length} conta(s) com erro</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-[240px] overflow-y-auto mb-4">
+                    {disableLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '⏸️' : '❌'}</span>
+                        <span className="flex-1 truncate">{l.name}</span>
+                        <span className="font-mono text-gray-400">{l.ok ? l.disabled + '/' + l.total : l.error || 'erro'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowDisableModal(false)} className="btn btn-primary w-full">Fechar</button>
                 </div>
               )}
             </div>

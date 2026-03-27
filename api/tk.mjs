@@ -260,6 +260,34 @@ export default async function handler(req, res) {
       return res.json(await r.json())
     }
 
+    if (action === 'disable_campaigns' && req.method === 'POST') {
+      var body = req.body
+      var advId = body && body.advertiser_id
+      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
+      var proxyRaw = (body && body.proxy) || null
+
+      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
+      if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, disabled: 0 })
+      var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
+      if (camps.length === 0) return res.json({ code: 0, data: { disabled: 0, total: 0 } })
+
+      // Desativa todas de uma vez — operação DISABLE é segura em bulk
+      var activeIds = camps
+        .filter(function(c) { return c.operation_status !== 'DISABLE' && c.operation_status !== 'DELETE' })
+        .map(function(c) { return c.campaign_id })
+
+      if (activeIds.length === 0) return res.json({ code: 0, data: { disabled: 0, total: camps.length, already_off: camps.length } })
+
+      var disRes = await tt('/campaign/status/update/', token, 'POST', {
+        advertiser_id: advId,
+        campaign_ids: activeIds,
+        operation_status: 'DISABLE'
+      }, proxyRaw)
+
+      if (disRes.code === 0) return res.json({ code: 0, data: { disabled: activeIds.length, total: camps.length } })
+      return res.json({ code: disRes.code, message: disRes.message, data: { disabled: 0, total: camps.length } })
+    }
+
     if (action === 'delete_campaigns' && req.method === 'POST') {
       var body = req.body
       var advId = body && body.advertiser_id

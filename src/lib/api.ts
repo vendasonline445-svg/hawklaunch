@@ -51,6 +51,11 @@ export var api = {
     body: JSON.stringify({ advertiser_id: advertiserId, proxy: proxy || null }),
   }),
 
+  disableCampaigns: (advertiserId: string, proxy?: string) => request('a=disable_campaigns', {
+    method: 'POST',
+    body: JSON.stringify({ advertiser_id: advertiserId, proxy: proxy || null }),
+  }),
+
   launchManual: (payload: any) => request('a=launch_manual', {
     method: 'POST',
     body: JSON.stringify(payload),
