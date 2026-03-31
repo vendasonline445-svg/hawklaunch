@@ -37,7 +37,7 @@ export default function Dashboard() {
   const [showAppealModal, setShowAppealModal] = useState(false)
   const [appealStep, setAppealStep] = useState<'check' | 'confirm' | 'appealing' | 'done'>('check')
   const [appealAccount, setAppealAccount] = useState<{ id: string; name: string } | null>(null)
-  const [rejectedAds, setRejectedAds] = useState<{ ad_id: string; ad_name: string; status: string; operation_status: string }[]>([])
+  const [rejectedAds, setRejectedAds] = useState<{ ad_id: string; adgroup_id?: string; ad_name: string; status: string; operation_status: string }[]>([])
   const [appealLogs, setAppealLogs] = useState<{ ad_id: string; ad_name: string; ok: boolean; error?: string }[]>([])
   const [appealProgress, setAppealProgress] = useState(0)
   const appealAbort = useRef(false)
