@@ -348,8 +348,8 @@ export default async function handler(req, res) {
       }
 
       // Rejeição pode aparecer em vários campos dependendo da versão da API
-      var REJECT_OPS = ['REVIEW_REJECT', 'AD_REVIEW_REJECT', 'AUDIT_DENY', 'REVIEW_NOT_APPROVED']
-      var REJECT_SEC = ['AD_STATUS_REVIEW_REJECT', 'AD_STATUS_AUDIT_DENY', 'AUDIT_DENY']
+      var REJECT_OPS = ['REVIEW_REJECT', 'AD_REVIEW_REJECT', 'AUDIT_DENY', 'REVIEW_NOT_APPROVED', 'CREATIVE_NOT_APPROVED']
+      var REJECT_SEC = ['AD_STATUS_REVIEW_REJECT', 'AD_STATUS_AUDIT_DENY', 'AUDIT_DENY', 'CREATIVE_NOT_APPROVED']
       var rejected = allAds.filter(function(ad) {
         var op  = (ad.operation_status  || '').toUpperCase()
         var sec = (ad.secondary_status  || '').toUpperCase()
@@ -358,14 +358,18 @@ export default async function handler(req, res) {
         return REJECT_OPS.indexOf(op)  !== -1 ||
                REJECT_SEC.indexOf(sec) !== -1 ||
                REJECT_SEC.indexOf(pri) !== -1 ||
-               st.includes('not_approved') ||
-               st.includes('not approved') ||
-               st.includes('review_reject') ||
-               st.includes('audit_deny')
+               op.includes('REJECT') || op.includes('DENY') || op.includes('NOT_APPROVED') ||
+               sec.includes('REJECT') || sec.includes('DENY') || sec.includes('NOT_APPROVED') ||
+               pri.includes('REJECT') || pri.includes('DENY') || pri.includes('NOT_APPROVED') ||
+               st.includes('not') || st.includes('reject') || st.includes('deny')
       }).map(function(ad) {
         return { ad_id: ad.ad_id, ad_name: ad.ad_name, adgroup_id: ad.adgroup_id, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status, primary_status: ad.primary_status }
       })
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length } })
+      // Inclui amostra dos status brutos para debug quando não encontrar nada
+      var debugSample = allAds.slice(0, 5).map(function(ad) {
+        return { ad_id: ad.ad_id, op: ad.operation_status, sec: ad.secondary_status, pri: ad.primary_status, st: ad.status }
+      })
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_sample: debugSample } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {

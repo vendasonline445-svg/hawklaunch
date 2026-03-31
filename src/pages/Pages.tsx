@@ -106,8 +106,16 @@ export function Creatives() {
           operation_status: ad.operation_status || ad.secondary_status || ad.primary_status || 'REVIEW_REJECT'
         }))
         result.set(advId, list)
+        const scanned = r.data?.scanned ?? 0
         if (list.length > 0) {
-          setScanLog(prev => [...prev, `[${ts()}] ⚠️ ${list.length} rejeitado(s) — ${label}`])
+          setScanLog(prev => [...prev, `[${ts()}] ⚠️ ${list.length} rejeitado(s) de ${scanned} ads — ${label}`])
+        } else if (scanned > 0 && r.data?.debug_sample?.length > 0) {
+          // Mostra status brutos para identificar os valores corretos da API
+          const sample = r.data.debug_sample
+          setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads, nenhum capturado. Status brutos (amostra):`])
+          sample.forEach((s: any) => {
+            setScanLog(prev => [...prev, `       op="${s.op}" sec="${s.sec}" pri="${s.pri}" st="${s.st}"`])
+          })
         }
       } catch (e: any) {
         result.set(advId, [])
