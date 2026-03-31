@@ -329,20 +329,42 @@ export default async function handler(req, res) {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
-      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'secondary_status'])
-      var filtering = JSON.stringify({ primary_status: 'STATUS_DELIVERY_NOT_ALLOWED' })
-      var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(fields) + '&filtering=' + encodeURIComponent(filtering) + '&page_size=100'
-      var result = await tt(ep, token, 'GET', null, proxyRaw)
-      if (result.code !== 0) return res.json(result)
-      var ads = (result.data && result.data.list) ? result.data.list : []
-      var rejected = ads.filter(function(ad) {
-        return ad.operation_status === 'REVIEW_REJECT' ||
-               ad.secondary_status === 'AD_STATUS_REVIEW_REJECT' ||
-               (ad.status && ad.status.toLowerCase().includes('not approved'))
+      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'secondary_status', 'primary_status', 'review_appeal_status'])
+
+      // Busca todas as páginas sem filtro para não perder ads rejeitados com status inesperado
+      var allAds = []
+      var page = 1
+      while (true) {
+        var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(fields) + '&page_size=100&page=' + page
+        var result = await tt(ep, token, 'GET', null, proxyRaw)
+        if (result.code !== 0) return res.json(result)
+        var pageAds = (result.data && result.data.list) ? result.data.list : []
+        allAds = allAds.concat(pageAds)
+        var pageInfo = result.data && result.data.page_info
+        if (!pageInfo || page >= (pageInfo.total_page || 1) || pageAds.length === 0) break
+        page++
+        if (page > 10) break // máx 1000 ads
+      }
+
+      // Rejeição pode aparecer em vários campos dependendo da versão da API
+      var REJECT_OPS = ['REVIEW_REJECT', 'AD_REVIEW_REJECT', 'AUDIT_DENY', 'REVIEW_NOT_APPROVED']
+      var REJECT_SEC = ['AD_STATUS_REVIEW_REJECT', 'AD_STATUS_AUDIT_DENY', 'AUDIT_DENY']
+      var rejected = allAds.filter(function(ad) {
+        var op  = (ad.operation_status  || '').toUpperCase()
+        var sec = (ad.secondary_status  || '').toUpperCase()
+        var pri = (ad.primary_status    || '').toUpperCase()
+        var st  = (ad.status            || '').toLowerCase()
+        return REJECT_OPS.indexOf(op)  !== -1 ||
+               REJECT_SEC.indexOf(sec) !== -1 ||
+               REJECT_SEC.indexOf(pri) !== -1 ||
+               st.includes('not_approved') ||
+               st.includes('not approved') ||
+               st.includes('review_reject') ||
+               st.includes('audit_deny')
       }).map(function(ad) {
-        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status }
+        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status, primary_status: ad.primary_status }
       })
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length } })
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {

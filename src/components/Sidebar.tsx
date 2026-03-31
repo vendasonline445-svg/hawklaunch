@@ -4,6 +4,7 @@ const nav = [
   { section: 'Principal' },
   { icon: '📊', label: 'Dashboard', path: '/' },
   { icon: '🚀', label: 'Nova Campanha', path: '/launch' },
+  { icon: '🏗️', label: 'Criar Contas', path: '/create-accounts' },
   { icon: '📋', label: 'Campanhas', path: '/campaigns' },
   { section: 'Configuração' },
   { icon: '👥', label: 'Ad Accounts', path: '/accounts' },

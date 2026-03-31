@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useAppStore } from '@/store'
 
 export function Campaigns() {
   return (
@@ -29,10 +30,16 @@ export function Accounts() {
 }
 
 type AdItem = { advId: string; ad_id: string; ad_name: string; operation_status: string }
+type BcAccount = { advertiser_id: string; advertiser_name?: string; name?: string; advertiser_status?: string; status?: string }
 
 export function Creatives() {
+  const { bcId } = useAppStore()
   const [accountIds, setAccountIds] = useState('')
   const [proxy, setProxy] = useState('')
+  const [bcAccounts, setBcAccounts] = useState<BcAccount[]>([])
+  const [bcLoading, setBcLoading] = useState(false)
+  const [bcLoaded, setBcLoaded] = useState(false)
+  const [bcSelected, setBcSelected] = useState<Set<string>>(new Set())
   const [phase, setPhase] = useState<'idle' | 'checking' | 'results' | 'appealing' | 'done'>('idle')
   const [checkLogs, setCheckLogs] = useState<string[]>([])
   const [foundAds, setFoundAds] = useState<AdItem[]>([])
@@ -62,8 +69,9 @@ export function Creatives() {
       try {
         const r = await api.listRejectedAds(advId, proxy || undefined) as any
         const list: any[] = r.data?.list || []
-        list.forEach(ad => allAds.push({ advId, ad_id: ad.ad_id, ad_name: ad.ad_name, operation_status: ad.operation_status || ad.secondary_status || 'REVIEW_REJECT' }))
-        setCheckLogs(prev => [...prev, `[${ts()}] ${list.length > 0 ? `⚠️ ${list.length} rejeitado(s)` : '✅ Nenhum rejeitado'} — ${advId}`])
+        const scanned: number = r.data?.scanned ?? list.length
+        list.forEach(ad => allAds.push({ advId, ad_id: ad.ad_id, ad_name: ad.ad_name, operation_status: ad.operation_status || ad.secondary_status || ad.primary_status || 'REVIEW_REJECT' }))
+        setCheckLogs(prev => [...prev, `[${ts()}] ${list.length > 0 ? `⚠️ ${list.length} rejeitado(s)` : '✅ Nenhum rejeitado'} de ${scanned} ads — ${advId}`])
       } catch (e: any) {
         setCheckLogs(prev => [...prev, `[${ts()}] ❌ Erro em ${advId}: ${e.message}`])
       }
@@ -117,6 +125,38 @@ export function Creatives() {
     })
   }
 
+  async function loadBcAccounts() {
+    if (!bcId) return
+    setBcLoading(true)
+    setBcLoaded(false)
+    try {
+      const res = await api.getBcAdvertisers(bcId) as any
+      const list: BcAccount[] = res.data?.list || []
+      setBcAccounts(list)
+      setBcSelected(new Set())
+      setBcLoaded(true)
+    } catch (e) {
+      setBcAccounts([])
+      setBcLoaded(true)
+    } finally {
+      setBcLoading(false)
+    }
+  }
+
+  function toggleBcAccount(id: string) {
+    setBcSelected(prev => {
+      const n = new Set(prev)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  function applyBcSelection() {
+    const current = new Set(accountIds.split('\n').map(s => s.trim()).filter(Boolean))
+    bcSelected.forEach(id => current.add(id))
+    setAccountIds([...current].join('\n'))
+  }
+
   const uniqueAccounts = [...new Set(foundAds.map(a => a.advId))].length
   const selectedCount = foundAds.filter(a => selectedAds.has(a.ad_id)).length
   const successCount = appealLogs.filter(l => l.includes('] ✓')).length
@@ -132,6 +172,78 @@ export function Creatives() {
             <h2 className="text-lg font-bold">Appeal em Massa — CTV</h2>
             <p className="text-[11px] text-gray-500">Contesta anúncios com review rejeitado via TikTok Ads API</p>
           </div>
+        </div>
+
+        {/* BC account picker */}
+        <div className="mb-5 border border-hawk-border rounded-xl p-4 bg-hawk-input/40">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <span className="text-xs font-semibold text-gray-300">Carregar contas do BC</span>
+              {bcId && <span className="text-[10px] text-gray-600 ml-2 font-mono">{bcId}</span>}
+            </div>
+            <button
+              onClick={loadBcAccounts}
+              disabled={!bcId || bcLoading || phase === 'checking' || phase === 'appealing'}
+              className="btn btn-secondary btn-sm text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {bcLoading ? '⏳ Carregando...' : '🔄 Carregar do BC'}
+            </button>
+          </div>
+
+          {!bcId && (
+            <p className="text-[11px] text-gray-600">Nenhum BC conectado. Conecte no Dashboard primeiro.</p>
+          )}
+
+          {bcLoaded && bcAccounts.length === 0 && (
+            <p className="text-[11px] text-gray-500">Nenhuma conta encontrada no BC.</p>
+          )}
+
+          {bcLoaded && bcAccounts.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-gray-500">{bcAccounts.length} conta(s) — {bcSelected.size} selecionada(s)</span>
+                <div className="flex gap-2">
+                  <button className="text-[11px] text-hawk-accent hover:underline" onClick={() => setBcSelected(new Set(bcAccounts.map(a => a.advertiser_id)))}>Todas</button>
+                  <span className="text-gray-600">·</span>
+                  <button className="text-[11px] text-gray-400 hover:underline" onClick={() => setBcSelected(new Set())}>Nenhuma</button>
+                </div>
+              </div>
+              <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+                {bcAccounts.map(acc => {
+                  const id = acc.advertiser_id
+                  const label = acc.advertiser_name || acc.name || id
+                  const st = acc.advertiser_status || acc.status || ''
+                  const isActive = st === 'STATUS_ENABLE' || st === 'ENABLE'
+                  const sel = bcSelected.has(id)
+                  return (
+                    <div
+                      key={id}
+                      onClick={() => toggleBcAccount(id)}
+                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer border transition-colors ${sel ? 'border-amber-500/50 bg-amber-500/5' : 'border-hawk-border hover:border-gray-500'}`}
+                    >
+                      <div className={`w-3.5 h-3.5 border-2 rounded flex items-center justify-center text-[9px] flex-shrink-0 ${sel ? 'bg-amber-500 border-amber-500 text-black' : 'border-hawk-border'}`}>
+                        {sel ? '✓' : ''}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-medium truncate">{label}</div>
+                        <div className="text-[9px] text-gray-600 font-mono">{id}</div>
+                      </div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${isActive ? 'bg-green-500/15 text-green-400' : 'bg-gray-500/15 text-gray-500'}`}>
+                        {isActive ? 'ATIVA' : st || 'INATIVA'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              <button
+                onClick={applyBcSelection}
+                disabled={bcSelected.size === 0}
+                className="btn btn-primary w-full text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ➕ Adicionar {bcSelected.size > 0 ? `${bcSelected.size} conta(s)` : 'selecionadas'} ao campo abaixo
+              </button>
+            </>
+          )}
         </div>
 
         {/* Config fields */}
