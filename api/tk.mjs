@@ -330,13 +330,15 @@ export default async function handler(req, res) {
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
 
-      // Passo 1: buscar todos os ad_ids da conta (paginado, campos mínimos)
+      // Passo 1: buscar todos os ads via ad/get com campos de status
       var allAds = []
       var page = 1
-      var baseFields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id'])
+      var adFields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status', 'primary_status', 'operation_status'])
       try {
         while (true) {
-          var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(baseFields) + '&page_size=100&page=' + page
+          var ep = '/ad/get/?advertiser_id=' + advId
+            + '&fields=' + encodeURIComponent(adFields)
+            + '&page_size=100&page=' + page
           var listResult = await tt(ep, token, 'GET', null, proxyRaw)
           if (listResult.code !== 0) return res.json(listResult)
           var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
@@ -350,47 +352,68 @@ export default async function handler(req, res) {
 
       if (allAds.length === 0) return res.json({ code: 0, data: { list: [], total: 0, scanned: 0 } })
 
-      // Mapa ad_id → dados base
       var adMap = {}
       allAds.forEach(function(ad) { adMap[ad.ad_id] = ad })
 
-      // Passo 2: consultar GET /ad/review_info/ em lotes de 20
+      // Passo 2: consultar /smart_plus/ad/review_info/ em lotes de 20
+      // Endpoint correto para Upgraded Smart Plus ads
       var rejected = []
-      var debugReview = null  // raw da primeira resposta para diagnóstico
+      var debugSample = null
       var BATCH_SIZE = 20
       for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
         var batchIds = allAds.slice(bi, bi + BATCH_SIZE).map(function(a) { return a.ad_id })
         var idsParam = encodeURIComponent(JSON.stringify(batchIds))
         try {
-          var reviewResult = await tt('/ad/review_info/?advertiser_id=' + advId + '&ad_ids=' + idsParam, token, 'GET', null, proxyRaw)
-          if (bi === 0) debugReview = reviewResult  // salva primeira resposta para debug
-          if (reviewResult.code === 0) {
-            var adList = (reviewResult.data && reviewResult.data.ad_list) ? reviewResult.data.ad_list : []
-            adList.forEach(function(adReview) {
-              var reviews = adReview.review_info_list || []
-              var isRejected = reviews.some(function(r) {
-                var st = (r.review_status || r.status || '').toUpperCase()
-                return st === 'REJECTED' || st === 'AUDIT_DENY' || st === 'REVIEW_REJECT' ||
-                       st.includes('REJECT') || st.includes('DENY') || st.includes('NOT_APPROVED') ||
-                       st.includes('DISAPPROVE')
-              })
-              if (isRejected) {
-                var base = adMap[adReview.ad_id] || {}
+          var rv = await tt(
+            '/smart_plus/ad/review_info/?advertiser_id=' + advId + '&smart_plus_ad_ids=' + idsParam,
+            token, 'GET', null, proxyRaw
+          )
+          if (bi === 0) debugSample = rv  // guarda primeira resposta para debug
+          if (rv.code === 0) {
+            var adList = (rv.data && rv.data.list) ? rv.data.list : (rv.data || [])
+            if (!Array.isArray(adList)) adList = []
+            adList.forEach(function(item) {
+              var st = (item.review_status || item.status || item.material_status || '').toUpperCase()
+              var isRej = st.includes('AUDIT_DENY') || st.includes('REJECT') || st.includes('DENY') ||
+                          st.includes('NOT_APPROVED') || st.includes('DISAPPROVE')
+              if (isRej) {
+                var base = adMap[item.ad_id || item.smart_plus_ad_id] || {}
                 rejected.push({
-                  ad_id: adReview.ad_id,
-                  ad_name: base.ad_name || '',
+                  ad_id: item.ad_id || item.smart_plus_ad_id,
+                  ad_name: base.ad_name || item.ad_name || '',
                   adgroup_id: base.adgroup_id || '',
-                  review_info: reviews
+                  review_status: st,
                 })
               }
             })
+          } else if (bi === 0) {
+            // Se smart_plus endpoint falhar, fallback para secondary_status do ad/get
+            debugSample = { fallback: true, code: rv.code, msg: rv.message }
           }
-        } catch(e) { if (bi === 0) debugReview = { error: e.message } }
+        } catch(e) { if (bi === 0) debugSample = { error: e.message } }
 
         if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 800)
       }
 
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_review: debugReview } })
+      // Fallback: se o endpoint smart_plus falhou (sem resultados), usa secondary_status
+      var usedFallback = false
+      if (rejected.length === 0 && debugSample && (debugSample.fallback || debugSample.error)) {
+        usedFallback = true
+        function isRejSt(s) {
+          if (!s) return false
+          var u = s.toUpperCase()
+          return u.includes('AUDIT_DENY') || u.includes('REJECT') || u.includes('DENY') ||
+                 u.includes('NOT_APPROVED') || u.includes('DISAPPROVE')
+        }
+        rejected = allAds.filter(function(ad) {
+          return isRejSt(ad.secondary_status) || isRejSt(ad.primary_status)
+        }).map(function(ad) {
+          return { ad_id: ad.ad_id, ad_name: ad.ad_name || '', adgroup_id: ad.adgroup_id || '',
+                   review_status: ad.secondary_status || ad.primary_status || '' }
+        })
+      }
+
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_sample: debugSample, used_fallback: usedFallback } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {
@@ -399,13 +422,11 @@ export default async function handler(req, res) {
       var adId = body && body.ad_id
       if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
       var proxyRaw = (body && body.proxy) || null
-      // Appeal em nível de ad: POST /appeal/ad/
-      // reason: NO_VIOLATION = "I don't think there's a violation"
-      var result = await tt('/appeal/ad/', token, 'POST', {
+      // Appeal para Upgraded Smart Plus ads: POST /smart_plus/ad/appeal/
+      var result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
         advertiser_id: advId,
-        ad_id: adId,
-        reason: 'NO_VIOLATION',
-        description: 'i dont think theres a violation'
+        smart_plus_ad_id: adId,
+        appeal_reason: 'NO_VIOLATION',
       }, proxyRaw)
       return res.json(result)
     }
