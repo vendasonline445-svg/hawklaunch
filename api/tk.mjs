@@ -329,7 +329,7 @@ export default async function handler(req, res) {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
-      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'review_appeal_status'])
+      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'secondary_status'])
       var filtering = JSON.stringify({ primary_status: 'STATUS_DELIVERY_NOT_ALLOWED' })
       var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(fields) + '&filtering=' + encodeURIComponent(filtering) + '&page_size=100'
       var result = await tt(ep, token, 'GET', null, proxyRaw)
@@ -337,9 +337,10 @@ export default async function handler(req, res) {
       var ads = (result.data && result.data.list) ? result.data.list : []
       var rejected = ads.filter(function(ad) {
         return ad.operation_status === 'REVIEW_REJECT' ||
+               ad.secondary_status === 'AD_STATUS_REVIEW_REJECT' ||
                (ad.status && ad.status.toLowerCase().includes('not approved'))
       }).map(function(ad) {
-        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status }
+        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status }
       })
       return res.json({ code: 0, data: { list: rejected, total: rejected.length } })
     }
