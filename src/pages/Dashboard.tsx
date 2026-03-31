@@ -228,7 +228,7 @@ export default function Dashboard() {
       const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
       const ts = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       try {
-        const r = await api.appealAd(appealAccount.id, ad.ad_id, proxy) as any
+        const r = await api.appealAdgroup(appealAccount.id, ad.adgroup_id || ad.ad_id, proxy) as any
         if (r.code === 0) {
           setAppealLogs(prev => [...prev, { ad_id: ad.ad_id, ad_name: ad.ad_name, ok: true }])
         } else {
