@@ -325,6 +325,40 @@ export default async function handler(req, res) {
       return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
     }
 
+    if (action === 'ad_list_review') {
+      var advId = req.query.advertiser_id
+      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
+      var proxyRaw = req.query.proxy || null
+      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'review_appeal_status'])
+      var filtering = JSON.stringify({ primary_status: 'STATUS_DELIVERY_NOT_ALLOWED' })
+      var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(fields) + '&filtering=' + encodeURIComponent(filtering) + '&page_size=100'
+      var result = await tt(ep, token, 'GET', null, proxyRaw)
+      if (result.code !== 0) return res.json(result)
+      var ads = (result.data && result.data.list) ? result.data.list : []
+      var rejected = ads.filter(function(ad) {
+        return ad.operation_status === 'REVIEW_REJECT' ||
+               (ad.status && ad.status.toLowerCase().includes('not approved'))
+      }).map(function(ad) {
+        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status }
+      })
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length } })
+    }
+
+    if (action === 'ad_appeal' && req.method === 'POST') {
+      var body = req.body
+      var advId = body && body.advertiser_id
+      var adId = body && body.ad_id
+      if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
+      var proxyRaw = (body && body.proxy) || null
+      var result = await tt('/appeal/ad/', token, 'POST', {
+        advertiser_id: advId,
+        ad_id: adId,
+        reason: 'NO_VIOLATION',
+        description: 'i dont think thers a violation'
+      }, proxyRaw)
+      return res.json(result)
+    }
+
     if (action === 'remove_bc_accounts' && req.method === 'POST') {
       var body = req.body
       var bcId = body && body.bc_id

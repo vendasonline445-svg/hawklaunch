@@ -75,4 +75,12 @@ export var api = {
     method: 'POST',
     body: JSON.stringify({ bc_id: bcId, advertiser_ids: advertiserIds }),
   }),
+
+  listRejectedAds: (advId: string, proxy?: string) =>
+    request('a=ad_list_review&advertiser_id=' + advId + (proxy ? '&proxy=' + encodeURIComponent(proxy) : '')),
+
+  appealAd: (advId: string, adId: string, proxy?: string) => request('a=ad_appeal', {
+    method: 'POST',
+    body: JSON.stringify({ advertiser_id: advId, ad_id: adId, proxy: proxy || null }),
+  }),
 }

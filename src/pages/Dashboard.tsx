@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { api, clearToken } from '@/lib/api'
 
@@ -31,6 +32,15 @@ export default function Dashboard() {
   const [disableLogs, setDisableLogs] = useState<{ id: string; name: string; disabled: number; total: number; ok: boolean; error?: string }[]>([])
   const [disableProgress, setDisableProgress] = useState(0)
   const disableAbort = useRef(false)
+
+  // Appeal CTV modal state
+  const [showAppealModal, setShowAppealModal] = useState(false)
+  const [appealStep, setAppealStep] = useState<'check' | 'confirm' | 'appealing' | 'done'>('check')
+  const [appealAccount, setAppealAccount] = useState<{ id: string; name: string } | null>(null)
+  const [rejectedAds, setRejectedAds] = useState<{ ad_id: string; ad_name: string; status: string; operation_status: string }[]>([])
+  const [appealLogs, setAppealLogs] = useState<{ ad_id: string; ad_name: string; ok: boolean; error?: string }[]>([])
+  const [appealProgress, setAppealProgress] = useState(0)
+  const appealAbort = useRef(false)
 
   // Close accounts modal state
   const [showCloseModal, setShowCloseModal] = useState(false)
@@ -178,6 +188,65 @@ export default function Dashboard() {
     setDisableStep('done')
   }
 
+  async function openAppealModal(acc: { id: string; name: string }) {
+    setAppealAccount(acc)
+    setAppealStep('check')
+    setRejectedAds([])
+    setAppealLogs([])
+    setAppealProgress(0)
+    appealAbort.current = false
+    setShowAppealModal(true)
+
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '')
+      .split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const proxy = proxyList.length > 0 ? proxyList[0] : undefined
+
+    try {
+      const r = await api.listRejectedAds(acc.id, proxy) as any
+      const list = r.data?.list || []
+      setRejectedAds(list)
+      setAppealStep('confirm')
+    } catch (e: any) {
+      setRejectedAds([])
+      setAppealStep('confirm')
+    }
+  }
+
+  async function runAppeal() {
+    if (!appealAccount || rejectedAds.length === 0) return
+    setAppealStep('appealing')
+    setAppealLogs([])
+    setAppealProgress(0)
+    appealAbort.current = false
+
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '')
+      .split('\n').map((p: string) => p.trim()).filter(Boolean)
+
+    for (let i = 0; i < rejectedAds.length; i++) {
+      if (appealAbort.current) break
+      const ad = rejectedAds[i]
+      const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
+      const ts = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      try {
+        const r = await api.appealAd(appealAccount.id, ad.ad_id, proxy) as any
+        if (r.code === 0) {
+          setAppealLogs(prev => [...prev, { ad_id: ad.ad_id, ad_name: ad.ad_name, ok: true }])
+        } else {
+          setAppealLogs(prev => [...prev, { ad_id: ad.ad_id, ad_name: ad.ad_name, ok: false, error: r.message || 'Erro' }])
+        }
+      } catch (e: any) {
+        setAppealLogs(prev => [...prev, { ad_id: ad.ad_id, ad_name: ad.ad_name, ok: false, error: e.message }])
+      }
+      setAppealProgress(Math.round(((i + 1) / rejectedAds.length) * 100))
+      if (i < rejectedAds.length - 1 && !appealAbort.current) {
+        // delay triangular 2-5s
+        const delay = 2000 + ((Math.random() + Math.random()) / 2) * 3000
+        await new Promise(r => setTimeout(r, Math.floor(delay)))
+      }
+    }
+    setAppealStep('done')
+  }
+
   function openCloseModal() {
     setCloseStep('confirm')
     setCloseLogs([])
@@ -300,6 +369,15 @@ export default function Dashboard() {
                           <div className="text-[10px] text-gray-500 font-mono">{id}</div>
                         </div>
                         <div className="text-[10px] text-gray-500">{a.currency || 'BRL'}</div>
+                        {isActive && (
+                          <button
+                            title="Appeal anúncios rejeitados"
+                            onClick={() => openAppealModal({ id, name })}
+                            className="text-gray-500 hover:text-amber-400 transition-colors flex-shrink-0"
+                          >
+                            <AlertTriangle size={13} />
+                          </button>
+                        )}
                       </div>
                     )
                   })}
@@ -573,6 +651,128 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <button onClick={() => setShowDisableModal(false)} className="btn btn-primary w-full">Fechar</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Appeal CTV Modal */}
+      {showAppealModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-hawk-card border border-hawk-border rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-hawk-border">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-amber-500/15 rounded-lg flex items-center justify-center">
+                  <AlertTriangle size={18} className="text-amber-400" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-base">Appeal CTV — Review Rejeitado</h2>
+                  <p className="text-[11px] text-gray-500 truncate max-w-[260px]">{appealAccount?.name}</p>
+                </div>
+              </div>
+              {(appealStep === 'confirm' || appealStep === 'done') && (
+                <button onClick={() => setShowAppealModal(false)} className="text-gray-500 hover:text-white text-lg">✕</button>
+              )}
+            </div>
+
+            <div className="p-5">
+              {/* Step: check */}
+              {appealStep === 'check' && (
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-3 animate-pulse">🔍</div>
+                  <p className="text-sm text-gray-300">Buscando anúncios com review rejeitado...</p>
+                </div>
+              )}
+
+              {/* Step: confirm */}
+              {appealStep === 'confirm' && (
+                <>
+                  {rejectedAds.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-3xl mb-3">✅</div>
+                      <p className="text-sm text-gray-300">Nenhum anúncio com review rejeitado encontrado.</p>
+                      <button onClick={() => setShowAppealModal(false)} className="btn btn-primary mt-5">Fechar</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex gap-2 mb-4">
+                        <span className="text-base">⚠️</span>
+                        <p className="text-[12px] text-amber-200">
+                          {rejectedAds.length} anúncio(s) com review rejeitado encontrado(s).<br />
+                          O appeal será enviado com motivo <strong>"NO_VIOLATION"</strong>.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5 max-h-[280px] overflow-y-auto mb-5">
+                        {rejectedAds.map(ad => (
+                          <div key={ad.ad_id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-hawk-border bg-hawk-input">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-semibold truncate">{ad.ad_name?.slice(0, 40) || ad.ad_id}</div>
+                              <div className="text-[10px] text-gray-500 font-mono">{ad.ad_id}</div>
+                            </div>
+                            <div className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 flex-shrink-0">
+                              {ad.operation_status || ad.status}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => setShowAppealModal(false)} className="btn btn-secondary flex-1">Cancelar</button>
+                        <button onClick={runAppeal} className="btn flex-1 bg-amber-500 hover:bg-amber-600 text-black font-bold">
+                          Iniciar Appeal ({rejectedAds.length} anúncio{rejectedAds.length !== 1 ? 's' : ''})
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Step: appealing */}
+              {appealStep === 'appealing' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold">Enviando appeals...</span>
+                    <span className="text-xs text-gray-400">{appealProgress}%</span>
+                  </div>
+                  <div className="w-full bg-hawk-border rounded-full h-1.5 mb-4">
+                    <div className="bg-amber-500 h-1.5 rounded-full transition-all" style={{ width: appealProgress + '%' }} />
+                  </div>
+                  <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+                    {appealLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '✓' : '✗'}</span>
+                        <span className="flex-1 truncate font-semibold">{l.ad_name?.slice(0, 40) || l.ad_id}</span>
+                        <span className="text-gray-400 font-mono text-[11px]">{l.ok ? 'appeal enviado' : 'erro: ' + (l.error || 'desconhecido')}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => { appealAbort.current = true }} className="btn btn-secondary w-full mt-4 text-xs">⛔ Cancelar</button>
+                </div>
+              )}
+
+              {/* Step: done */}
+              {appealStep === 'done' && (
+                <div>
+                  <div className="text-center py-4 mb-4">
+                    <div className="text-3xl mb-2">📋</div>
+                    <p className="text-sm font-semibold">
+                      {appealLogs.filter(l => l.ok).length} appeal(s) enviado(s) com sucesso
+                    </p>
+                    {appealLogs.some(l => !l.ok) && (
+                      <p className="text-xs text-red-400 mt-1">{appealLogs.filter(l => !l.ok).length} erro(s)</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-[240px] overflow-y-auto mb-4">
+                    {appealLogs.map((l, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] ${l.ok ? 'bg-green-500/8 border border-green-500/20' : 'bg-red-500/8 border border-red-500/20'}`}>
+                        <span>{l.ok ? '✓' : '✗'}</span>
+                        <span className="flex-1 truncate">{l.ad_name?.slice(0, 40) || l.ad_id}</span>
+                        <span className="font-mono text-gray-400 text-[11px]">{l.ok ? 'ok' : l.error || 'erro'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowAppealModal(false)} className="btn btn-primary w-full">Fechar</button>
                 </div>
               )}
             </div>
