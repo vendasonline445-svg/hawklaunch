@@ -334,17 +334,19 @@ export default async function handler(req, res) {
       var allAds = []
       var page = 1
       var baseFields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id'])
-      while (true) {
-        var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(baseFields) + '&page_size=100&page=' + page
-        var listResult = await tt(ep, token, 'GET', null, proxyRaw)
-        if (listResult.code !== 0) return res.json(listResult)
-        var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
-        allAds = allAds.concat(pageAds)
-        var pageInfo = listResult.data && listResult.data.page_info
-        if (!pageInfo || page >= (pageInfo.total_page || 1) || pageAds.length === 0) break
-        page++
-        if (page > 10) break
-      }
+      try {
+        while (true) {
+          var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(baseFields) + '&page_size=100&page=' + page
+          var listResult = await tt(ep, token, 'GET', null, proxyRaw)
+          if (listResult.code !== 0) return res.json(listResult)
+          var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
+          allAds = allAds.concat(pageAds)
+          var pageInfo = listResult.data && listResult.data.page_info
+          if (!pageInfo || page >= (pageInfo.total_page || 1) || pageAds.length === 0) break
+          page++
+          if (page > 10) break
+        }
+      } catch(e) { return res.json({ code: -1, message: 'ad/get falhou: ' + e.message }) }
 
       if (allAds.length === 0) return res.json({ code: 0, data: { list: [], total: 0, scanned: 0 } })
 
@@ -358,31 +360,30 @@ export default async function handler(req, res) {
       var BATCH_SIZE = 20
       for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
         var batchIds = allAds.slice(bi, bi + BATCH_SIZE).map(function(a) { return a.ad_id })
-        var reviewResult = await tt('/ad/review_info/', token, 'GET', {
-          advertiser_id: advId,
-          ad_ids: batchIds
-        }, proxyRaw)
-
-        if (reviewResult.code === 0) {
-          var adList = (reviewResult.data && reviewResult.data.ad_list) ? reviewResult.data.ad_list : []
-          adList.forEach(function(adReview) {
-            var reviews = adReview.review_info_list || []
-            var isRejected = reviews.some(function(r) {
-              var st = (r.review_status || r.status || '').toUpperCase()
-              return st === 'REJECTED' || st === 'AUDIT_DENY' || st === 'REVIEW_REJECT' ||
-                     st.includes('REJECT') || st.includes('DENY')
-            })
-            if (isRejected) {
-              var base = adMap[adReview.ad_id] || {}
-              rejected.push({
-                ad_id: adReview.ad_id,
-                ad_name: base.ad_name || '',
-                adgroup_id: base.adgroup_id || '',
-                review_info: reviews
+        var idsParam = encodeURIComponent(JSON.stringify(batchIds))
+        try {
+          var reviewResult = await tt('/ad/review_info/?advertiser_id=' + advId + '&ad_ids=' + idsParam, token, 'GET', null, proxyRaw)
+          if (reviewResult.code === 0) {
+            var adList = (reviewResult.data && reviewResult.data.ad_list) ? reviewResult.data.ad_list : []
+            adList.forEach(function(adReview) {
+              var reviews = adReview.review_info_list || []
+              var isRejected = reviews.some(function(r) {
+                var st = (r.review_status || r.status || '').toUpperCase()
+                return st === 'REJECTED' || st === 'AUDIT_DENY' || st === 'REVIEW_REJECT' ||
+                       st.includes('REJECT') || st.includes('DENY')
               })
-            }
-          })
-        }
+              if (isRejected) {
+                var base = adMap[adReview.ad_id] || {}
+                rejected.push({
+                  ad_id: adReview.ad_id,
+                  ad_name: base.ad_name || '',
+                  adgroup_id: base.adgroup_id || '',
+                  review_info: reviews
+                })
+              }
+            })
+          }
+        } catch(e) { /* batch falhou — continua */ }
 
         if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 800)
       }
