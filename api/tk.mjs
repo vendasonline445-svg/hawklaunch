@@ -355,14 +355,15 @@ export default async function handler(req, res) {
       allAds.forEach(function(ad) { adMap[ad.ad_id] = ad })
 
       // Passo 2: consultar GET /ad/review_info/ em lotes de 20
-      // Este endpoint retorna o status de review real de cada ad
       var rejected = []
+      var debugReview = null  // raw da primeira resposta para diagnóstico
       var BATCH_SIZE = 20
       for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
         var batchIds = allAds.slice(bi, bi + BATCH_SIZE).map(function(a) { return a.ad_id })
         var idsParam = encodeURIComponent(JSON.stringify(batchIds))
         try {
           var reviewResult = await tt('/ad/review_info/?advertiser_id=' + advId + '&ad_ids=' + idsParam, token, 'GET', null, proxyRaw)
+          if (bi === 0) debugReview = reviewResult  // salva primeira resposta para debug
           if (reviewResult.code === 0) {
             var adList = (reviewResult.data && reviewResult.data.ad_list) ? reviewResult.data.ad_list : []
             adList.forEach(function(adReview) {
@@ -370,7 +371,8 @@ export default async function handler(req, res) {
               var isRejected = reviews.some(function(r) {
                 var st = (r.review_status || r.status || '').toUpperCase()
                 return st === 'REJECTED' || st === 'AUDIT_DENY' || st === 'REVIEW_REJECT' ||
-                       st.includes('REJECT') || st.includes('DENY')
+                       st.includes('REJECT') || st.includes('DENY') || st.includes('NOT_APPROVED') ||
+                       st.includes('DISAPPROVE')
               })
               if (isRejected) {
                 var base = adMap[adReview.ad_id] || {}
@@ -383,12 +385,12 @@ export default async function handler(req, res) {
               }
             })
           }
-        } catch(e) { /* batch falhou — continua */ }
+        } catch(e) { if (bi === 0) debugReview = { error: e.message } }
 
         if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 800)
       }
 
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length } })
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_review: debugReview } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {

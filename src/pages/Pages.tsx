@@ -109,13 +109,23 @@ export function Creatives() {
         const scanned = r.data?.scanned ?? 0
         if (list.length > 0) {
           setScanLog(prev => [...prev, `[${ts()}] ⚠️ ${list.length} rejeitado(s) de ${scanned} ads — ${label}`])
-        } else if (scanned > 0 && r.data?.debug_sample?.length > 0) {
-          // Mostra status brutos para identificar os valores corretos da API
-          const sample = r.data.debug_sample
-          setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads, nenhum capturado. Status brutos (amostra):`])
-          sample.forEach((s: any) => {
-            setScanLog(prev => [...prev, `       op="${s.op}" sec="${s.sec}" pri="${s.pri}" st="${s.st}"`])
-          })
+        } else if (scanned > 0) {
+          // Mostra debug do review_info para identificar status reais
+          const dbg = r.data?.debug_review
+          if (dbg?.error) {
+            setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads, review_info erro: ${dbg.error}`])
+          } else if (dbg) {
+            setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads escaneados, nenhum rejeitado. review_info code=${dbg.code} msg="${dbg.message||''}"`])
+            const adList = dbg.data?.ad_list || []
+            adList.slice(0, 3).forEach((ad: any) => {
+              const reviews = ad.review_info_list || []
+              reviews.forEach((rv: any) => {
+                setScanLog(prev => [...prev, `       ad=${ad.ad_id} → ${JSON.stringify(rv)}`])
+              })
+            })
+          } else {
+            setScanLog(prev => [...prev, `[${ts()}] ✓ ${scanned} ads escaneados — nenhum rejeitado`])
+          }
         }
       } catch (e: any) {
         result.set(advId, [])
