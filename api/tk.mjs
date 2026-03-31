@@ -329,7 +329,8 @@ export default async function handler(req, res) {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
-      var fields = JSON.stringify(['ad_id', 'ad_name', 'status', 'operation_status', 'secondary_status', 'primary_status', 'review_appeal_status'])
+      // adgroup_id é necessário para o endpoint de appeal (POST /adgroup/appeal/)
+      var fields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'status', 'operation_status', 'secondary_status', 'primary_status', 'review_appeal_status'])
 
       // Busca todas as páginas sem filtro para não perder ads rejeitados com status inesperado
       var allAds = []
@@ -362,7 +363,7 @@ export default async function handler(req, res) {
                st.includes('review_reject') ||
                st.includes('audit_deny')
       }).map(function(ad) {
-        return { ad_id: ad.ad_id, ad_name: ad.ad_name, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status, primary_status: ad.primary_status }
+        return { ad_id: ad.ad_id, ad_name: ad.ad_name, adgroup_id: ad.adgroup_id, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status, primary_status: ad.primary_status }
       })
       return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length } })
     }
@@ -370,14 +371,13 @@ export default async function handler(req, res) {
     if (action === 'ad_appeal' && req.method === 'POST') {
       var body = req.body
       var advId = body && body.advertiser_id
-      var adId = body && body.ad_id
-      if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
+      var adgroupId = body && body.adgroup_id
+      if (!advId || !adgroupId) return res.status(400).json({ error: 'advertiser_id and adgroup_id required' })
       var proxyRaw = (body && body.proxy) || null
-      var result = await tt('/appeal/ad/', token, 'POST', {
+      // Endpoint correto conforme TikTok Ads API: POST /v1.3/adgroup/appeal/
+      var result = await tt('/adgroup/appeal/', token, 'POST', {
         advertiser_id: advId,
-        ad_id: adId,
-        reason: 'NO_VIOLATION',
-        description: 'i dont think thers a violation'
+        adgroup_id: adgroupId
       }, proxyRaw)
       return res.json(result)
     }

@@ -79,8 +79,9 @@ export var api = {
   listRejectedAds: (advId: string, proxy?: string) =>
     request('a=ad_list_review&advertiser_id=' + advId + (proxy ? '&proxy=' + encodeURIComponent(proxy) : '')),
 
-  appealAd: (advId: string, adId: string, proxy?: string) => request('a=ad_appeal', {
+  // appeal é por adgroup — endpoint correto: POST /v1.3/adgroup/appeal/
+  appealAdgroup: (advId: string, adgroupId: string, proxy?: string) => request('a=ad_appeal', {
     method: 'POST',
-    body: JSON.stringify({ advertiser_id: advId, ad_id: adId, proxy: proxy || null }),
+    body: JSON.stringify({ advertiser_id: advId, adgroup_id: adgroupId, proxy: proxy || null }),
   }),
 }
