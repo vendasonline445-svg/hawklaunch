@@ -109,15 +109,20 @@ export function Creatives() {
         const scanned = r.data?.scanned ?? 0
         if (list.length > 0) {
           setScanLog(prev => [...prev, `[${ts()}] ⚠️ ${list.length} rejeitado(s) de ${scanned} ads — ${label}`])
-        } else if (scanned > 0) {
-          const sample = r.data?.debug_sample || []
-          if (sample.length > 0) {
-            setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads, nenhum rejeitado. Status amostra:`])
-            sample.forEach((s: any) => {
-              setScanLog(prev => [...prev, `       sec="${s.secondary_status}" pri="${s.primary_status}" op="${s.operation_status}"`])
-            })
+        } else {
+          // sempre loga resultado mesmo que scanned=0
+          const dbgGet = r.data?.debug_get
+          const dbgRev = r.data?.debug_review
+          if (scanned === 0 && dbgGet) {
+            setScanLog(prev => [...prev, `[${ts()}] 🔎 0 ads — smart_plus/get code=${dbgGet.code || dbgGet.error} keys=${JSON.stringify(dbgGet.keys||[])}`])
+          } else if (scanned > 0 && dbgRev) {
+            const code = dbgRev.code ?? dbgRev.error ?? '?'
+            const keys = dbgRev.data ? Object.keys(dbgRev.data) : []
+            setScanLog(prev => [...prev, `[${ts()}] 🔎 ${scanned} ads, nenhum rejeitado. review code=${code} keys=${JSON.stringify(keys)}`])
+          } else if (scanned > 0) {
+            setScanLog(prev => [...prev, `[${ts()}] ✓ ${scanned} ads — nenhum rejeitado`])
           } else {
-            setScanLog(prev => [...prev, `[${ts()}] ✓ ${scanned} ads escaneados — nenhum rejeitado`])
+            setScanLog(prev => [...prev, `[${ts()}] ✓ ${label} — sem ads`])
           }
         }
       } catch (e: any) {

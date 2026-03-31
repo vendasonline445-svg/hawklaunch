@@ -330,17 +330,18 @@ export default async function handler(req, res) {
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
 
-      // Passo 1: buscar todos os ads via ad/get com campos de status
+      // Passo 1: buscar todos os Smart Plus ads via /smart_plus/ad/get/
+      // (os ads "Upgraded Smart+" NÃO aparecem no /ad/get/ normal)
       var allAds = []
       var page = 1
-      var adFields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status', 'primary_status', 'operation_status'])
+      var debugGetResult = null
       try {
         while (true) {
-          var ep = '/ad/get/?advertiser_id=' + advId
-            + '&fields=' + encodeURIComponent(adFields)
+          var ep = '/smart_plus/ad/get/?advertiser_id=' + advId
             + '&page_size=100&page=' + page
           var listResult = await tt(ep, token, 'GET', null, proxyRaw)
-          if (listResult.code !== 0) return res.json(listResult)
+          if (page === 1) debugGetResult = { code: listResult.code, msg: listResult.message, keys: listResult.data ? Object.keys(listResult.data) : [] }
+          if (listResult.code !== 0) break  // não retorna erro — pode ter ads normais também
           var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
           allAds = allAds.concat(pageAds)
           var pageInfo = listResult.data && listResult.data.page_info
@@ -348,72 +349,88 @@ export default async function handler(req, res) {
           page++
           if (page > 10) break
         }
-      } catch(e) { return res.json({ code: -1, message: 'ad/get falhou: ' + e.message }) }
+      } catch(e) { debugGetResult = { error: e.message } }
 
-      if (allAds.length === 0) return res.json({ code: 0, data: { list: [], total: 0, scanned: 0 } })
+      // Passo 2: se smart_plus/ad/get retornou ads, consultar review_info deles
+      // Senão, tenta /ad/get/ normal como fallback
+      if (allAds.length === 0) {
+        var page2 = 1
+        try {
+          while (true) {
+            var ep2 = '/ad/get/?advertiser_id=' + advId
+              + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status']))
+              + '&page_size=100&page=' + page2
+            var r2 = await tt(ep2, token, 'GET', null, proxyRaw)
+            if (r2.code !== 0) break
+            var pg2 = (r2.data && r2.data.list) ? r2.data.list : []
+            allAds = allAds.concat(pg2)
+            var pi2 = r2.data && r2.data.page_info
+            if (!pi2 || page2 >= (pi2.total_page || 1) || pg2.length === 0) break
+            page2++
+            if (page2 > 10) break
+          }
+        } catch(e) {}
+      }
 
+      if (allAds.length === 0) {
+        return res.json({ code: 0, data: { list: [], total: 0, scanned: 0, debug_get: debugGetResult } })
+      }
+
+      // Extrai o ID correto (smart_plus_ad_id ou ad_id)
+      function getAdId(ad) { return ad.smart_plus_ad_id || ad.ad_id || '' }
       var adMap = {}
-      allAds.forEach(function(ad) { adMap[ad.ad_id] = ad })
+      allAds.forEach(function(ad) { adMap[getAdId(ad)] = ad })
 
-      // Passo 2: consultar /smart_plus/ad/review_info/ em lotes de 20
-      // Endpoint correto para Upgraded Smart Plus ads
+      // Passo 3: /smart_plus/ad/review_info/ em lotes de 100
+      // extra_info_setting com include_reject_info=true
+      // review_status === 'UNAVAILABLE' → rejeitado
       var rejected = []
-      var debugSample = null
-      var BATCH_SIZE = 20
+      var debugReview = null
+      var BATCH_SIZE = 100
+      var extraSetting = encodeURIComponent(JSON.stringify({ include_reject_info: true }))
+
       for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
-        var batchIds = allAds.slice(bi, bi + BATCH_SIZE).map(function(a) { return a.ad_id })
+        var batch = allAds.slice(bi, bi + BATCH_SIZE)
+        var batchIds = batch.map(getAdId)
         var idsParam = encodeURIComponent(JSON.stringify(batchIds))
         try {
           var rv = await tt(
-            '/smart_plus/ad/review_info/?advertiser_id=' + advId + '&smart_plus_ad_ids=' + idsParam,
+            '/smart_plus/ad/review_info/?advertiser_id=' + advId
+              + '&smart_plus_ad_ids=' + idsParam
+              + '&extra_info_setting=' + extraSetting,
             token, 'GET', null, proxyRaw
           )
-          if (bi === 0) debugSample = rv  // guarda primeira resposta para debug
-          if (rv.code === 0) {
-            var adList = (rv.data && rv.data.list) ? rv.data.list : (rv.data || [])
-            if (!Array.isArray(adList)) adList = []
-            adList.forEach(function(item) {
-              var st = (item.review_status || item.status || item.material_status || '').toUpperCase()
-              var isRej = st.includes('AUDIT_DENY') || st.includes('REJECT') || st.includes('DENY') ||
-                          st.includes('NOT_APPROVED') || st.includes('DISAPPROVE')
-              if (isRej) {
-                var base = adMap[item.ad_id || item.smart_plus_ad_id] || {}
+          if (bi === 0) debugReview = rv  // salva primeira resposta completa para debug
+
+          if (rv.code === 0 && rv.data) {
+            // Resposta: data.smart_plus_ad_review_infos (array)
+            var reviewList = rv.data.smart_plus_ad_review_infos || rv.data.list || []
+            reviewList.forEach(function(item) {
+              var st = (item.review_status || '').toUpperCase()
+              // UNAVAILABLE = rejeitado; ALL_AVAILABLE/PART_AVAILABLE = aprovado
+              if (st === 'UNAVAILABLE') {
+                var id = item.smart_plus_ad_id || item.ad_id || ''
+                var base = adMap[id] || {}
                 rejected.push({
-                  ad_id: item.ad_id || item.smart_plus_ad_id,
+                  ad_id: id,
                   ad_name: base.ad_name || item.ad_name || '',
                   adgroup_id: base.adgroup_id || '',
                   review_status: st,
+                  appeal_status: item.appeal_status || '',
                 })
               }
             })
-          } else if (bi === 0) {
-            // Se smart_plus endpoint falhar, fallback para secondary_status do ad/get
-            debugSample = { fallback: true, code: rv.code, msg: rv.message }
           }
-        } catch(e) { if (bi === 0) debugSample = { error: e.message } }
+        } catch(e) { if (bi === 0) debugReview = { error: e.message } }
 
-        if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 800)
+        if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 600)
       }
 
-      // Fallback: se o endpoint smart_plus falhou (sem resultados), usa secondary_status
-      var usedFallback = false
-      if (rejected.length === 0 && debugSample && (debugSample.fallback || debugSample.error)) {
-        usedFallback = true
-        function isRejSt(s) {
-          if (!s) return false
-          var u = s.toUpperCase()
-          return u.includes('AUDIT_DENY') || u.includes('REJECT') || u.includes('DENY') ||
-                 u.includes('NOT_APPROVED') || u.includes('DISAPPROVE')
-        }
-        rejected = allAds.filter(function(ad) {
-          return isRejSt(ad.secondary_status) || isRejSt(ad.primary_status)
-        }).map(function(ad) {
-          return { ad_id: ad.ad_id, ad_name: ad.ad_name || '', adgroup_id: ad.adgroup_id || '',
-                   review_status: ad.secondary_status || ad.primary_status || '' }
-        })
-      }
-
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_sample: debugSample, used_fallback: usedFallback } })
+      return res.json({ code: 0, data: {
+        list: rejected, total: rejected.length, scanned: allAds.length,
+        debug_get: debugGetResult,
+        debug_review: debugReview,
+      }})
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {
