@@ -329,59 +329,80 @@ export default async function handler(req, res) {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = req.query.proxy || null
-      // adgroup_id é necessário para o endpoint de appeal (POST /adgroup/appeal/)
-      var fields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'status', 'operation_status', 'secondary_status', 'primary_status', 'review_appeal_status'])
 
-      // Busca todas as páginas sem filtro para não perder ads rejeitados com status inesperado
+      // Passo 1: buscar todos os ad_ids da conta (paginado, campos mínimos)
       var allAds = []
       var page = 1
+      var baseFields = JSON.stringify(['ad_id', 'ad_name', 'adgroup_id'])
       while (true) {
-        var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(fields) + '&page_size=100&page=' + page
-        var result = await tt(ep, token, 'GET', null, proxyRaw)
-        if (result.code !== 0) return res.json(result)
-        var pageAds = (result.data && result.data.list) ? result.data.list : []
+        var ep = '/ad/get/?advertiser_id=' + advId + '&fields=' + encodeURIComponent(baseFields) + '&page_size=100&page=' + page
+        var listResult = await tt(ep, token, 'GET', null, proxyRaw)
+        if (listResult.code !== 0) return res.json(listResult)
+        var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
         allAds = allAds.concat(pageAds)
-        var pageInfo = result.data && result.data.page_info
+        var pageInfo = listResult.data && listResult.data.page_info
         if (!pageInfo || page >= (pageInfo.total_page || 1) || pageAds.length === 0) break
         page++
-        if (page > 10) break // máx 1000 ads
+        if (page > 10) break
       }
 
-      // Rejeição pode aparecer em vários campos dependendo da versão da API
-      var REJECT_OPS = ['REVIEW_REJECT', 'AD_REVIEW_REJECT', 'AUDIT_DENY', 'REVIEW_NOT_APPROVED', 'CREATIVE_NOT_APPROVED']
-      var REJECT_SEC = ['AD_STATUS_REVIEW_REJECT', 'AD_STATUS_AUDIT_DENY', 'AUDIT_DENY', 'CREATIVE_NOT_APPROVED']
-      var rejected = allAds.filter(function(ad) {
-        var op  = (ad.operation_status  || '').toUpperCase()
-        var sec = (ad.secondary_status  || '').toUpperCase()
-        var pri = (ad.primary_status    || '').toUpperCase()
-        var st  = (ad.status            || '').toLowerCase()
-        return REJECT_OPS.indexOf(op)  !== -1 ||
-               REJECT_SEC.indexOf(sec) !== -1 ||
-               REJECT_SEC.indexOf(pri) !== -1 ||
-               op.includes('REJECT') || op.includes('DENY') || op.includes('NOT_APPROVED') ||
-               sec.includes('REJECT') || sec.includes('DENY') || sec.includes('NOT_APPROVED') ||
-               pri.includes('REJECT') || pri.includes('DENY') || pri.includes('NOT_APPROVED') ||
-               st.includes('not') || st.includes('reject') || st.includes('deny')
-      }).map(function(ad) {
-        return { ad_id: ad.ad_id, ad_name: ad.ad_name, adgroup_id: ad.adgroup_id, status: ad.status, operation_status: ad.operation_status, secondary_status: ad.secondary_status, primary_status: ad.primary_status }
-      })
-      // Inclui amostra dos status brutos para debug quando não encontrar nada
-      var debugSample = allAds.slice(0, 5).map(function(ad) {
-        return { ad_id: ad.ad_id, op: ad.operation_status, sec: ad.secondary_status, pri: ad.primary_status, st: ad.status }
-      })
-      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length, debug_sample: debugSample } })
+      if (allAds.length === 0) return res.json({ code: 0, data: { list: [], total: 0, scanned: 0 } })
+
+      // Mapa ad_id → dados base
+      var adMap = {}
+      allAds.forEach(function(ad) { adMap[ad.ad_id] = ad })
+
+      // Passo 2: consultar GET /ad/review_info/ em lotes de 20
+      // Este endpoint retorna o status de review real de cada ad
+      var rejected = []
+      var BATCH_SIZE = 20
+      for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
+        var batchIds = allAds.slice(bi, bi + BATCH_SIZE).map(function(a) { return a.ad_id })
+        var reviewResult = await tt('/ad/review_info/', token, 'GET', {
+          advertiser_id: advId,
+          ad_ids: batchIds
+        }, proxyRaw)
+
+        if (reviewResult.code === 0) {
+          var adList = (reviewResult.data && reviewResult.data.ad_list) ? reviewResult.data.ad_list : []
+          adList.forEach(function(adReview) {
+            var reviews = adReview.review_info_list || []
+            var isRejected = reviews.some(function(r) {
+              var st = (r.review_status || r.status || '').toUpperCase()
+              return st === 'REJECTED' || st === 'AUDIT_DENY' || st === 'REVIEW_REJECT' ||
+                     st.includes('REJECT') || st.includes('DENY')
+            })
+            if (isRejected) {
+              var base = adMap[adReview.ad_id] || {}
+              rejected.push({
+                ad_id: adReview.ad_id,
+                ad_name: base.ad_name || '',
+                adgroup_id: base.adgroup_id || '',
+                review_info: reviews
+              })
+            }
+          })
+        }
+
+        if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 800)
+      }
+
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: allAds.length } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {
       var body = req.body
       var advId = body && body.advertiser_id
-      var adgroupId = body && body.adgroup_id
-      if (!advId || !adgroupId) return res.status(400).json({ error: 'advertiser_id and adgroup_id required' })
+      var adId = body && body.ad_id
+      if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
       var proxyRaw = (body && body.proxy) || null
-      // Endpoint correto conforme TikTok Ads API: POST /v1.3/adgroup/appeal/
-      var result = await tt('/adgroup/appeal/', token, 'POST', {
+      // Appeal em nível de ad: POST /appeal/ad/
+      // reason: NO_VIOLATION = "I don't think there's a violation"
+      var result = await tt('/appeal/ad/', token, 'POST', {
         advertiser_id: advId,
-        adgroup_id: adgroupId
+        ad_id: adId,
+        reason: 'NO_VIOLATION',
+        description: 'i dont think theres a violation'
       }, proxyRaw)
       return res.json(result)
     }

@@ -142,36 +142,22 @@ export function Creatives() {
     })
   }
 
-  // Appeal é por adgroup — deduplica: um appeal por adgroup_id único
-  const adgroupsToAppeal: AdItem[] = (() => {
-    const seen = new Set<string>()
-    return [...selectedAccounts].flatMap(id => rejectedByAccount.get(id) || []).filter(item => {
-      const key = item.advId + ':' + (item.adgroup_id || item.ad_id)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  })()
-  const adsToAppeal = [...selectedAccounts].flatMap(id => rejectedByAccount.get(id) || [])
+  // Appeal em nível de ad — um request por ad_id
+  const adsToAppeal: AdItem[] = [...selectedAccounts].flatMap(id => rejectedByAccount.get(id) || [])
 
   async function runAppeal() {
-    if (adgroupsToAppeal.length === 0) return
+    if (adsToAppeal.length === 0) return
     setPhase('appealing')
     setAppealLogs([])
     setAppealProgress(0)
     abortRef.current = false
 
-    for (let i = 0; i < adgroupsToAppeal.length; i++) {
+    for (let i = 0; i < adsToAppeal.length; i++) {
       if (abortRef.current) break
-      const item = adgroupsToAppeal[i]
-      const label = (item.ad_name || item.adgroup_id || item.ad_id).slice(0, 45)
-      if (!item.adgroup_id) {
-        setAppealLogs(prev => [...prev, `[${ts()}] ⚠️ ${label} — adgroup_id não encontrado, pulando`])
-        setAppealProgress(Math.round(((i + 1) / adgroupsToAppeal.length) * 100))
-        continue
-      }
+      const item = adsToAppeal[i]
+      const label = (item.ad_name || item.ad_id).slice(0, 45)
       try {
-        const r = await api.appealAdgroup(item.advId, item.adgroup_id, proxy || undefined) as any
+        const r = await api.appealAd(item.advId, item.ad_id, proxy || undefined) as any
         if (r.code === 0) {
           setAppealLogs(prev => [...prev, `[${ts()}] ✓ ${label} — appeal enviado`])
         } else {
@@ -180,8 +166,8 @@ export function Creatives() {
       } catch (e: any) {
         setAppealLogs(prev => [...prev, `[${ts()}] ✗ ${label} — ${e.message}`])
       }
-      setAppealProgress(Math.round(((i + 1) / adgroupsToAppeal.length) * 100))
-      if (i < adgroupsToAppeal.length - 1 && !abortRef.current) {
+      setAppealProgress(Math.round(((i + 1) / adsToAppeal.length) * 100))
+      if (i < adsToAppeal.length - 1 && !abortRef.current) {
         setAppealLogs(prev => [...prev, `[${ts()}] ⏳ Aguardando...`])
         const delay = 2000 + ((Math.random() + Math.random()) / 2) * 3000
         await new Promise(r => setTimeout(r, Math.floor(delay)))
@@ -350,16 +336,16 @@ export function Creatives() {
           </div>
 
           {/* Appeal button */}
-          {scanState === 'done' && adgroupsToAppeal.length > 0 && phase === 'idle' && (
+          {scanState === 'done' && adsToAppeal.length > 0 && phase === 'idle' && (
             <div className="mt-4 space-y-2">
               <p className="text-[11px] text-gray-500 text-center">
-                {adsToAppeal.length} ad{adsToAppeal.length !== 1 ? 's' : ''} rejeitado{adsToAppeal.length !== 1 ? 's' : ''} em {adgroupsToAppeal.length} adgroup{adgroupsToAppeal.length !== 1 ? 's' : ''} únicos — appeal é enviado por adgroup
+                {adsToAppeal.length} ad{adsToAppeal.length !== 1 ? 's' : ''} rejeitado{adsToAppeal.length !== 1 ? 's' : ''} em {selectedAccounts.size} conta{selectedAccounts.size !== 1 ? 's' : ''} selecionada{selectedAccounts.size !== 1 ? 's' : ''}
               </p>
               <button
                 onClick={runAppeal}
                 className="btn w-full bg-amber-500 hover:bg-amber-600 text-black font-bold"
               >
-                ⚖️ Enviar Appeal — {adgroupsToAppeal.length} adgroup{adgroupsToAppeal.length !== 1 ? 's' : ''} de {selectedAccounts.size} conta{selectedAccounts.size !== 1 ? 's' : ''}
+                ⚖️ Enviar Appeal — {adsToAppeal.length} ad{adsToAppeal.length !== 1 ? 's' : ''} de {selectedAccounts.size} conta{selectedAccounts.size !== 1 ? 's' : ''}
               </button>
             </div>
           )}
