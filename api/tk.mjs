@@ -443,7 +443,8 @@ export default async function handler(req, res) {
       var result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
         advertiser_id: advId,
         smart_plus_ad_id: adId,
-        appeal_reason: 'NO_VIOLATION',
+        appeal_reason: "I don't think there's a violation",
+        appeal_description: "I don't think there's a violation",
       }, proxyRaw)
       return res.json(result)
     }
