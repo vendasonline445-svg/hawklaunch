@@ -721,9 +721,9 @@ function StepLaunch() {
 
   function buildScheduleStart() {
     if (schedule === 'custom' && customSchedule) {
-      const utcDate = new Date(new Date(customSchedule).getTime() + 3 * 3600000)
+      const utcDate = new Date(customSchedule)
       const s = utcDate.toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' BRT → ' + s + ' UTC')
+      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' local → ' + s + ' UTC')
       return s
     }
     if (schedule !== 'now') {
@@ -1140,7 +1140,7 @@ function StepLaunch() {
         />
         {customSchedule && (
           <div className="text-[11px] text-gray-500 mt-1">
-            UTC (TikTok): {new Date(new Date(customSchedule).getTime() + 3*3600000).toISOString().replace('T',' ').slice(0,19)}
+            UTC (TikTok): {new Date(customSchedule).toISOString().replace('T',' ').slice(0,19)}
           </div>
         )}
       </div>
