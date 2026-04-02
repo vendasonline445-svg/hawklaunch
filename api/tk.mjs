@@ -205,10 +205,10 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&identity_type=AUTH_CODE&asset_type=CTA_AUTO_OPTIMIZED&content_type=LANDING_PAGE', token, 'GET', null, proxyRaw)
-  if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length < 3) return { ok: false, error: 'CTA recommend failed' }
+  if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length === 0) return { ok: false, error: 'CTA recommend failed' }
   var assets = rec.data.recommend_assets
   var content = []
-  for (var i = 0; i < Math.min(3, assets.length); i++) {
+  for (var i = 0; i < assets.length; i++) {
     content.push({ asset_content: assets[i].asset_content, asset_ids: assets[i].asset_ids })
   }
   var createRes = await tt('/creative/portfolio/create/', token, 'POST', {

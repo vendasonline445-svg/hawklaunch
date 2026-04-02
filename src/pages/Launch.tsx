@@ -393,7 +393,6 @@ function StepCreative() {
 
   const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
   const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
-  const [ctas, setCtas] = useState<Set<string>>(new Set(['SHOP_NOW','LEARN_MORE','ORDER_NOW','BUY_NOW','SIGN_UP','VIEW_NOW','GET_OFFER','VISIT_STORE','CONTACT_US','DOWNLOAD']))
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
 
   return (
@@ -491,25 +490,6 @@ function StepCreative() {
               </div>
             )}
           </div>
-          <div><label className="label mb-1.5 block">CTAs (selecione vários)</label>
-            <div className="flex flex-wrap gap-1.5 mt-1">
-              {[
-                {v:'GET_NOW',l:'Get it now'},{v:'LEARN_MORE',l:'Learn more'},{v:'SHOP_NOW',l:'Shop now'},
-                {v:'CHECK_IT_OUT',l:'Check it out'},{v:'GET_YOUR_ORDER_NOW',l:'Get your order now'},
-                {v:'PLACE_ORDER_TODAY',l:'Place your order today'},{v:'ORDER_YOURS_TODAY',l:'Order yours today'},
-                {v:'GET_YOURS',l:'Get yours'},{v:'CLICK_TO_SHOP_NOW',l:'Click to shop now'},
-                {v:'BUY_NOW',l:'Buy it now'},{v:'DOWNLOAD',l:'Download'},{v:'SIGN_UP',l:'Sign up'},
-                {v:'CONTACT_US',l:'Contact us'},{v:'APPLY_NOW',l:'Apply now'},{v:'BOOK_NOW',l:'Book now'},
-                {v:'PLAY_GAME',l:'Play game'},{v:'WATCH_NOW',l:'Watch now'},{v:'READ_MORE',l:'Read more'},
-                {v:'VIEW_NOW',l:'View now'},{v:'GET_QUOTE',l:'Get quote'},{v:'ORDER_NOW',l:'Order now'},
-                {v:'INSTALL_NOW',l:'Install now'},{v:'GET_SHOWTIMES',l:'Get showtimes'},
-                {v:'LISTEN_NOW',l:'Listen now'},{v:'INTERESTED',l:'Interested'},{v:'SUBSCRIBE',l:'Subscribe'},
-                {v:'GET_TICKETS_NOW',l:'Get tickets now'},{v:'EXPERIENCE_NOW',l:'Experience now'},
-                {v:'PRE_ORDER_NOW',l:'Pre-order now'},{v:'VISIT_STORE',l:'Visit store'},
-                {v:'DONATE_NOW',l:'Donate now'},
-              ].map(c=><div key={c.v} onClick={()=>{const n=new Set(ctas);n.has(c.v)?n.delete(c.v):n.add(c.v);setCtas(n);localStorage.setItem('hawklaunch_ctas',JSON.stringify([...n]))}}
-                className={`chip text-[10px] ${ctas.has(c.v)?'active':''}`}>{c.l}</div>)}
-            </div></div>
         </div>
         <label className="label mb-1.5 block">Textos (um por linha)</label>
         <textarea className="input min-h-[60px]" placeholder="Oferta imperdível!" value={adTexts} onChange={e=>{setAdTexts(e.target.value);localStorage.setItem("hawklaunch_ad_texts",e.target.value)}} />
@@ -754,8 +734,6 @@ function StepLaunch() {
     const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
     const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter((d: string) => d.length > 0)
     const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
-    const ctasRaw = localStorage.getItem('hawklaunch_ctas')
-    const ctas = ctasRaw ? JSON.parse(ctasRaw) : ['SHOP_NOW']
     const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '80')
     const targetCpa = parseInt(localStorage.getItem('hawklaunch_target_cpa') || '0')
     const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '2')
@@ -793,7 +771,6 @@ function StepLaunch() {
         cta_cache: ctaCacheSaved,
         start_paused: startPaused,
         ad_texts: adTexts,
-        call_to_action_list: ctas,
         budget,
         target_cpa: targetCpa || undefined,
         pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
