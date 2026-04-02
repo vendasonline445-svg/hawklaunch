@@ -818,9 +818,10 @@ export default async function handler(req, res) {
         }
         if (noPermissionM) { L(advId, '⛔ Sem permissão — conta ignorada'); continue }
 
-        // Pixel (only needed for CONVERSIONS objective)
+        // Pixel (needed for CONVERSIONS / WEB_CONVERSIONS objective)
         var pixelId = body.pixel_id || null
-        if (!pixelId && body.objective_type === 'CONVERSIONS') {
+        var objType = body.objective_type || 'WEB_CONVERSIONS'
+        if (!pixelId && (objType === 'CONVERSIONS' || objType === 'WEB_CONVERSIONS')) {
           try {
             var pr = await tt('/pixel/list/?advertiser_id=' + advId, token, 'GET', null, accountProxy)
             if (pr.data && pr.data.pixels && pr.data.pixels.length > 0) pixelId = pr.data.pixels[0].pixel_id
@@ -844,7 +845,7 @@ export default async function handler(req, res) {
             advertiser_id: advId,
             request_id: makeRequestId(),
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
-            objective_type: body.objective_type || 'CONVERSIONS',
+            objective_type: body.objective_type || 'WEB_CONVERSIONS',
             budget_mode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
             budget_optimize_on: isCBO,
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
@@ -912,6 +913,11 @@ export default async function handler(req, res) {
             agPayload.conversion_bid_price = parseFloat(body.bid_price)
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
+          }
+
+          // Smart Creative (ACO) requires creative_material_mode on adgroup
+          if (body.identity_type === 'AUTH_CODE') {
+            agPayload.creative_material_mode = 'SMART_CREATIVE'
           }
 
           var agRes = await tt('/adgroup/create/', token, 'POST', agPayload, accountProxy)
