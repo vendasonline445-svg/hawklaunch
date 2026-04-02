@@ -960,8 +960,12 @@ export default async function handler(req, res) {
               ? body.ad_texts.slice(0, 5).map(function(t) { return { title: t } })
               : [{ title: 'Shop now' }]
 
-            // Build call_to_action_list (max 3)
-            var ctaList = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
+            // CTA Portfolio (same approach as Smart+ — raw enums not supported)
+            var ctaResult = await getOrCreateCTA(token, advId, accountProxy)
+            if (!ctaResult.ok) {
+              L(advId, '⚠️ CTA Portfolio: ' + ctaResult.error)
+              results.errors.push({ account: advId, step: 'cta', error: ctaResult.error })
+            }
 
             var acoPayload = {
               advertiser_id: advId,
@@ -972,8 +976,8 @@ export default async function handler(req, res) {
               common_material: {
                 ad_name: (body.ad_name || campPayload.campaign_name),
                 is_smart_creative: true,
+                call_to_action_id: ctaResult.ok ? ctaResult.call_to_action_id : undefined,
               },
-              call_to_action_list: ctaList,
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
