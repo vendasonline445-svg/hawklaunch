@@ -23,30 +23,45 @@ export default function App() {
 
     if (oauth === 'success' || connected === 'true') {
       setLoading(true)
-      // Fetch token from Supabase via our API
-      fetch('/api/tk?a=token')
-        .then(r => r.json())
-        .then(res => {
-          if (res.code === 0 && res.data?.access_token) {
-            const { access_token, advertiser_ids, bc_ids } = res.data
-            setToken(access_token)
-            setAccessToken(access_token)
-            setConnected(true)
-            localStorage.setItem('hawklaunch_connected', 'true')
-            if (bc_ids?.length) {
-              setBcId(bc_ids[0])
-              localStorage.setItem('hawklaunch_bc', bc_ids[0])
+
+      // Prefer token from URL (each browser gets its own), fallback to Supabase
+      const urlToken = searchParams.get('token')
+      const urlAdvertisers = searchParams.get('advertisers')
+
+      const applyToken = (access_token: string, advertiser_ids?: string[], bc_ids?: string[]) => {
+        setToken(access_token)
+        setAccessToken(access_token)
+        setConnected(true)
+        localStorage.setItem('hawklaunch_connected', 'true')
+        if (bc_ids?.length) {
+          setBcId(bc_ids[0])
+          localStorage.setItem('hawklaunch_bc', bc_ids[0])
+        }
+        if (advertiser_ids?.length) {
+          localStorage.setItem('hawklaunch_advertisers', JSON.stringify(advertiser_ids))
+        }
+      }
+
+      if (urlToken) {
+        const advIds = urlAdvertisers ? JSON.parse(urlAdvertisers) : undefined
+        applyToken(urlToken, advIds)
+        setLoading(false)
+        navigate('/', { replace: true })
+      } else {
+        fetch('/api/tk?a=token')
+          .then(r => r.json())
+          .then(res => {
+            if (res.code === 0 && res.data?.access_token) {
+              const { access_token, advertiser_ids, bc_ids } = res.data
+              applyToken(access_token, advertiser_ids, bc_ids)
             }
-            if (advertiser_ids?.length) {
-              localStorage.setItem('hawklaunch_advertisers', JSON.stringify(advertiser_ids))
-            }
-          }
-        })
-        .catch(console.error)
-        .finally(() => {
-          setLoading(false)
-          navigate('/', { replace: true })
-        })
+          })
+          .catch(console.error)
+          .finally(() => {
+            setLoading(false)
+            navigate('/', { replace: true })
+          })
+      }
     }
   }, [searchParams])
 

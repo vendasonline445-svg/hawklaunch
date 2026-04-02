@@ -238,7 +238,9 @@ function proxyForAccount(proxyList, accountIndex) {
 export default async function handler(req, res) {
   try {
     var action = req.query.a
-    var token = await getToken()
+    // Use token from Authorization header (each browser has its own), fallback to Supabase
+    var authHeader = req.headers && req.headers['authorization']
+    var token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null) || await getToken()
     if (!token && action !== 'token' && action !== 'test_proxy') return res.status(401).json({ error: 'No token' })
 
     if (action === 'test_proxy') {
