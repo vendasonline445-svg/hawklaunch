@@ -881,7 +881,6 @@ export default async function handler(req, res) {
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
-            creative_material_mode: 'CUSTOM',
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
@@ -963,12 +962,13 @@ export default async function handler(req, res) {
               landing_page_urls: [{ landing_page_url: accountDomain }],
               common_material: {
                 ad_name: (body.ad_name || campPayload.campaign_name),
+                is_smart_creative: true,
               },
               call_to_action_list: ctaList,
-              is_smart_creative: true,
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
+            await rndDelay(2000, 3000)
             var adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
             if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
               await rndDelay(8000, 12000)
