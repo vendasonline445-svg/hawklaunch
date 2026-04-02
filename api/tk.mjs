@@ -691,7 +691,7 @@ export default async function handler(req, res) {
           results.adgroups++
           await rndDelay(400, 700)
 
-          var ALL_CTAS = ['BUY_NOW','LEARN_MORE','SHOP_NOW','CHECK_IT_OUT','GET_YOURS_NOW','SHOP_TODAY','ORDER_TODAY','SHOP','ORDER_YOURS_TODAY','VISIT_STORE']
+          var ALL_CTAS = ['SHOP_NOW','LEARN_MORE','ORDER_NOW','VISIT_STORE','SIGN_UP','CONTACT_US','VIEW_NOW','SUBSCRIBE','DOWNLOAD_NOW','GET_QUOTE']
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
           var ctaRotation = 0
