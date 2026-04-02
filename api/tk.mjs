@@ -220,11 +220,11 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   return { ok: true, call_to_action_id: createRes.data.creative_portfolio_id }
 }
 
-function appendUtm(url) {
-  if (!url) return url
-  var sep = url.includes('?') ? '&' : '?'
-  return url + sep + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
-}
+var UTM_PARAMS = [
+  { key: 'utm_source', value: 'tiktok' },
+  { key: 'utm_id', value: '__CAMPAIGN_ID__' },
+  { key: 'utm_campaign', value: '__CAMPAIGN_NAME__' }
+]
 
 function parseProxyList(rawList) {
   if (!Array.isArray(rawList)) return []
@@ -669,7 +669,7 @@ export default async function handler(req, res) {
             billing_event: 'OCPM',
             pixel_id: pixelId,
             promotion_type: 'WEBSITE',
-            landing_page_url: appendUtm(accountDomain),
+            landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
@@ -713,8 +713,9 @@ export default async function handler(req, res) {
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
-                landing_page_url_list: [{ landing_page_url: appendUtm(accountDomain) }],
+                landing_page_url_list: [{ landing_page_url: accountDomain }],
                 call_to_action_list: adCtas,
+                utm_params: UTM_PARAMS,
               }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
@@ -861,7 +862,7 @@ export default async function handler(req, res) {
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
-            landing_page_url: appendUtm(accountDomain),
+            landing_page_url: accountDomain,
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
             targeting_spec: targetingSpec,
@@ -918,7 +919,8 @@ export default async function handler(req, res) {
                   identity_id: sd.identity_id,
                   identity_type: 'AUTH_CODE',
                   call_to_action: body.call_to_action || 'SHOP_NOW',
-                  landing_page_url: appendUtm(accountDomain),
+                  landing_page_url: accountDomain,
+                  utm_params: UTM_PARAMS,
                 }
                 if (body.ad_texts && body.ad_texts.length > 0) creativeM.ad_text = body.ad_texts[(c * adsPerCode + a) % body.ad_texts.length]
                 var adPayloadM = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeM] }
@@ -953,8 +955,9 @@ export default async function handler(req, res) {
                 identity_id: body.identity_id || '',
                 identity_type: body.identity_type || 'CUSTOMIZED_USER',
                 call_to_action: body.call_to_action || 'SHOP_NOW',
-                landing_page_url: appendUtm(accountDomain),
+                landing_page_url: accountDomain,
                 display_name: body.display_name || '',
+                utm_params: UTM_PARAMS,
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
