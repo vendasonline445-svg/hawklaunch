@@ -224,11 +224,6 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   return { ok: true, call_to_action_id: createRes.data.creative_portfolio_id }
 }
 
-var UTM_PARAMS = [
-  { key: 'utm_source', value: 'tiktok' },
-  { key: 'utm_id', value: '__CAMPAIGN_ID__' },
-  { key: 'utm_campaign', value: '__CAMPAIGN_NAME__' }
-]
 
 function parseProxyList(rawList) {
   if (!Array.isArray(rawList)) return []
@@ -577,6 +572,7 @@ export default async function handler(req, res) {
       var accountDomain = domainList.length > 0
         ? domainList[accountIndex % domainList.length]
         : (body.landing_page_url || '')
+      if (accountDomain) accountDomain += (accountDomain.includes('?') ? '&' : '?') + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
 
       if (domainList.length > 0) {
         L('system', '🌐 Domínio desta conta: ' + accountDomain)
@@ -739,7 +735,6 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
-                utm_params: UTM_PARAMS,
               }
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
@@ -788,6 +783,7 @@ export default async function handler(req, res) {
       var accountDomain = domainList.length > 0
         ? domainList[accountIndex % domainList.length]
         : (body.landing_page_url || '')
+      if (accountDomain) accountDomain += (accountDomain.includes('?') ? '&' : '?') + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
 
       if (domainList.length > 0) L('system', '🌐 Domínio: ' + accountDomain)
 
@@ -945,8 +941,7 @@ export default async function handler(req, res) {
                   identity_type: 'AUTH_CODE',
                   call_to_action: body.call_to_action || 'SHOP_NOW',
                   landing_page_url: accountDomain,
-                  utm_params: UTM_PARAMS,
-                }
+                  }
                 if (body.ad_texts && body.ad_texts.length > 0) creativeM.ad_text = body.ad_texts[(c * adsPerCode + a) % body.ad_texts.length]
                 var adPayloadM = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeM] }
                 L(advId, 'Ad Spark ' + (c+1) + '-' + (a+1) + '...')
@@ -982,7 +977,6 @@ export default async function handler(req, res) {
                 call_to_action: body.call_to_action || 'SHOP_NOW',
                 landing_page_url: accountDomain,
                 display_name: body.display_name || '',
-                utm_params: UTM_PARAMS,
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
