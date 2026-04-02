@@ -840,12 +840,15 @@ export default async function handler(req, res) {
           var isCBO = body.budget_mode !== 'abo'
           var humanBudget = humanizeValue(body.budget || 50, 10)
 
-          // Campaign
+          // Campaign — Smart Creative (ACO) requires WEB_CONVERSIONS, not CONVERSIONS
+          var effectiveObjective = body.objective_type || 'WEB_CONVERSIONS'
+          if (body.identity_type === 'AUTH_CODE' && effectiveObjective === 'CONVERSIONS') effectiveObjective = 'WEB_CONVERSIONS'
+
           var campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
-            objective_type: body.objective_type || 'WEB_CONVERSIONS',
+            objective_type: effectiveObjective,
             budget_mode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
             budget_optimize_on: isCBO,
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
