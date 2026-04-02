@@ -846,6 +846,7 @@ export default async function handler(req, res) {
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
             objective_type: body.objective_type || 'CONVERSIONS',
             budget_mode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+            budget_optimize_on: isCBO,
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
           if (isCBO) campPayload.budget = humanBudget
