@@ -160,6 +160,62 @@ function StepAccounts({ nextStep = 1 }: { nextStep?: number }) {
     loadAccounts()
   }
 
+  // Pause (disable) campaigns
+  const [pausing, setPausing] = useState(false)
+  const [showPauseModal, setShowPauseModal] = useState(false)
+  const [pauseLog, setPauseLog] = useState<string[]>([])
+  const [pauseProgress, setPauseProgress] = useState({ done: 0, total: 0, errors: 0 })
+  const addPauseLog = (msg: string) => setPauseLog(prev => [...prev, msg])
+
+  async function pauseCampaignsFromSelected() {
+    const targets = [...selected].filter(id => campaignStatus[id] === true)
+    if (targets.length === 0) return
+    setPausing(true)
+    setPauseLog([])
+    setPauseProgress({ done: 0, total: targets.length, errors: 0 })
+
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '')
+      .split('\n').map(p => p.trim()).filter(Boolean)
+
+    let errors = 0
+    for (let i = 0; i < targets.length; i++) {
+      const advId = targets[i]
+      const acc = accounts.find(a => a.advertiser_id === advId)
+      const accName = acc?.advertiser_name || advId
+      const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
+
+      addPauseLog('━━━ (' + (i+1) + '/' + targets.length + ') ' + accName)
+      if (proxy) addPauseLog('🛡️ Proxy: ' + proxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+
+      try {
+        const r = await api.disableCampaigns(advId, proxy)
+        if ((r as any).code === 0) {
+          const d = (r as any).data
+          if (d.disabled > 0) addPauseLog('✅ ' + d.disabled + '/' + d.total + ' campanha(s) pausada(s)')
+          else if (d.already_off) addPauseLog('⚠️ ' + d.already_off + ' campanha(s) já pausadas')
+          else addPauseLog('✅ Nenhuma campanha ativa')
+        } else {
+          addPauseLog('❌ ' + ((r as any).message || 'Erro'))
+          errors++
+        }
+      } catch(e: any) {
+        addPauseLog('❌ ' + e.message)
+        errors++
+      }
+
+      setPauseProgress({ done: i + 1, total: targets.length, errors })
+
+      if (i < targets.length - 1) {
+        const wait = Math.floor(Math.random() * 10000) + 15000
+        addPauseLog('⏳ Aguardando ' + Math.round(wait/1000) + 's...')
+        await new Promise(r => setTimeout(r, wait))
+      }
+    }
+
+    setPausing(false)
+    loadAccounts()
+  }
+
   return (
     <div className="card animate-fade-in">
       <div className="flex items-center justify-between mb-5">
@@ -224,6 +280,63 @@ function StepAccounts({ nextStep = 1 }: { nextStep?: number }) {
         </div>
       )}
 
+      {/* Pause modal */}
+      {showPauseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !pausing && setShowPauseModal(false)}>
+          <div className="bg-hawk-card border border-hawk-border rounded-2xl w-[420px] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-2xl">⏸️</span>
+              <h3 className="text-lg font-bold">Pausar campanhas</h3>
+            </div>
+            {!pausing && pauseLog.length === 0 ? (
+              <>
+                <p className="text-sm text-gray-400 mb-2">
+                  Serão <strong className="text-yellow-400">pausadas todas as campanhas</strong> das contas abaixo:
+                </p>
+                <div className="max-h-[160px] overflow-y-auto mb-3 space-y-1">
+                  {[...selected].filter(id => campaignStatus[id] === true).map(id => {
+                    const acc = accounts.find(a => a.advertiser_id === id)
+                    return <div key={id} className="flex items-center gap-2 px-3 py-1.5 bg-hawk-input rounded text-xs"><span className="text-yellow-400">⏸</span><span className="truncate">{acc?.advertiser_name || id}</span></div>
+                  })}
+                </div>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mb-3">
+                  🛡️ Cada conta será processada com proxy dedicada e delays de 15-25s entre contas.
+                </div>
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-300 mb-5">
+                  ⏸️ Reversível — campanhas podem ser reativadas manualmente no TikTok Ads Manager.
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn btn-secondary flex-1" onClick={() => setShowPauseModal(false)}>Cancelar</button>
+                  <button className="flex-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-black text-sm font-bold rounded-lg transition-colors"
+                    onClick={pauseCampaignsFromSelected}>
+                    ⏸️ Confirmar Pausa
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="py-2">
+                <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                  <span>{pausing ? '⏸️ Pausando...' : '✅ Concluído'}</span>
+                  <span>{pauseProgress.done}/{pauseProgress.total} contas</span>
+                </div>
+                <div className="h-2 bg-hawk-input rounded-full overflow-hidden mb-3">
+                  <div className={'h-full rounded-full transition-all ' + (pausing ? 'bg-yellow-500' : 'bg-green-500')}
+                    style={{width: pauseProgress.total > 0 ? (pauseProgress.done / pauseProgress.total * 100) + '%' : '0%'}} />
+                </div>
+                <div className="max-h-[200px] overflow-y-auto space-y-0.5 bg-hawk-bg rounded-lg p-3 font-mono text-[11px]">
+                  {pauseLog.map((l, i) => (
+                    <div key={i} className={'leading-relaxed ' + (l.startsWith('✅') ? 'text-green-400' : l.startsWith('❌') ? 'text-red-400' : l.startsWith('⚠') ? 'text-yellow-400' : l.startsWith('⏳') ? 'text-gray-500' : l.startsWith('🛡') ? 'text-blue-400' : 'text-gray-300')}>{l}</div>
+                  ))}
+                </div>
+                {!pausing && (
+                  <button className="btn btn-primary w-full mt-4" onClick={() => { setShowPauseModal(false); setPauseLog([]) }}>Fechar</button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button className="btn btn-primary btn-sm" onClick={loadAccounts}>
@@ -237,12 +350,16 @@ function StepAccounts({ nextStep = 1 }: { nextStep?: number }) {
             📢 Selecionar c/ campanha ({accountsWithCampaign.length})
           </button>
         )}
-        {[...selected].some(id => campaignStatus[id] === true) && (
+        {[...selected].some(id => campaignStatus[id] === true) && (<>
+          <button className="btn btn-secondary btn-sm border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+            onClick={() => setShowPauseModal(true)}>
+            ⏸️ Pausar campanhas ({[...selected].filter(id => campaignStatus[id] === true).length})
+          </button>
           <button className="btn btn-secondary btn-sm border-red-500/40 text-red-400 hover:bg-red-500/10"
             onClick={() => setShowDeleteModal(true)}>
             🗑️ Deletar campanhas ({[...selected].filter(id => campaignStatus[id] === true).length})
           </button>
-        )}
+        </>)}
       </div>
 
       {/* Search */}
@@ -1891,7 +2008,7 @@ function QueueStepBuilder() {
       </div>
 
       <div className="flex justify-end mt-6 pt-4 border-t border-hawk-border">
-        <button className="btn btn-primary" onClick={() => setStep(1)} disabled={smartCount + manualCount === 0}>Próximo → Contas</button>
+        <button className="btn btn-primary" onClick={() => { localStorage.setItem('hawklaunch_queue_smart_count', String(smartCount)); localStorage.setItem('hawklaunch_queue_manual_count', String(manualCount)); setStep(1) }} disabled={smartCount + manualCount === 0}>Próximo → Contas</button>
       </div>
     </div>
   )
