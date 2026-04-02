@@ -220,6 +220,12 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   return { ok: true, call_to_action_id: createRes.data.creative_portfolio_id }
 }
 
+function appendUtm(url) {
+  if (!url) return url
+  var sep = url.includes('?') ? '&' : '?'
+  return url + sep + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
+}
+
 function parseProxyList(rawList) {
   if (!Array.isArray(rawList)) return []
   return rawList.map(parseProxy).filter(Boolean)
@@ -549,7 +555,6 @@ export default async function handler(req, res) {
       var results = { campaigns: 0, adgroups: 0, ads: 0, spark_authorized: 0, cta_created: 0, errors: [], logs: [] }
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
-      var ctaCache = {}
       var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
 
       var proxyList = parseProxyList(body.proxy_list || [])
@@ -604,33 +609,6 @@ export default async function handler(req, res) {
           continue
         }
 
-        var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
-        if (existingCtaId) {
-          ctaCache[advId] = existingCtaId
-          L(advId, '✅ CTA reutilizado: ' + existingCtaId)
-        } else {
-          L(advId, 'Creating CTA portfolio...')
-          try {
-            var cta = await getOrCreateCTA(token, advId, accountProxy)
-            if (cta.ok) {
-              ctaCache[advId] = cta.call_to_action_id
-              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
-              results.cta_created++
-              results.cta_cache = results.cta_cache || {}
-              results.cta_cache[advId] = cta.call_to_action_id
-            } else {
-              L(advId, '⚠️ CTA: ' + cta.error)
-              results.errors.push({ account: advId, step: 'cta', error: cta.error })
-              // Sem permissão no CTA = sem permissão na conta, pula
-              if (cta.error && cta.error.toLowerCase().includes('permission')) {
-                L(advId, '⛔ Sem permissão — conta ignorada')
-                noPermission = true
-              }
-            }
-          } catch(e) {
-            L(advId, '❌ CTA error: ' + e.message)
-          }
-        }
       }
 
       var campaignsPerAccount = body.campaigns_per_account || 1
@@ -640,7 +618,6 @@ export default async function handler(req, res) {
         // Pula conta sem permissão
         if (noPermission) { noPermission = false; continue }
         var accountSparks = sparkAuthCache[advId] || {}
-        var ctaId = ctaCache[advId] || null
         var pixelId = body.pixel_id || null
 
         if (!pixelId) {
@@ -692,7 +669,7 @@ export default async function handler(req, res) {
             billing_event: 'OCPM',
             pixel_id: pixelId,
             promotion_type: 'WEBSITE',
-            landing_page_url: accountDomain,
+            landing_page_url: appendUtm(accountDomain),
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
@@ -728,9 +705,8 @@ export default async function handler(req, res) {
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
-                landing_page_url_list: [{ landing_page_url: accountDomain }],
+                landing_page_url_list: [{ landing_page_url: appendUtm(accountDomain) }],
               }
-              if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
@@ -876,7 +852,7 @@ export default async function handler(req, res) {
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
-            landing_page_url: accountDomain,
+            landing_page_url: appendUtm(accountDomain),
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
             targeting_spec: targetingSpec,
@@ -933,7 +909,7 @@ export default async function handler(req, res) {
                   identity_id: sd.identity_id,
                   identity_type: 'AUTH_CODE',
                   call_to_action: body.call_to_action || 'SHOP_NOW',
-                  landing_page_url: accountDomain,
+                  landing_page_url: appendUtm(accountDomain),
                 }
                 if (body.ad_texts && body.ad_texts.length > 0) creativeM.ad_text = body.ad_texts[(c * adsPerCode + a) % body.ad_texts.length]
                 var adPayloadM = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeM] }
@@ -968,7 +944,7 @@ export default async function handler(req, res) {
                 identity_id: body.identity_id || '',
                 identity_type: body.identity_type || 'CUSTOMIZED_USER',
                 call_to_action: body.call_to_action || 'SHOP_NOW',
-                landing_page_url: accountDomain,
+                landing_page_url: appendUtm(accountDomain),
                 display_name: body.display_name || '',
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
