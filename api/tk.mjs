@@ -574,7 +574,6 @@ export default async function handler(req, res) {
       var accountDomain = domainList.length > 0
         ? domainList[accountIndex % domainList.length]
         : (body.landing_page_url || '')
-      if (accountDomain) accountDomain += (accountDomain.includes('?') ? '&' : '?') + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
 
       if (domainList.length > 0) {
         L('system', '🌐 Domínio desta conta: ' + accountDomain)
@@ -785,7 +784,6 @@ export default async function handler(req, res) {
       var accountDomain = domainList.length > 0
         ? domainList[accountIndex % domainList.length]
         : (body.landing_page_url || '')
-      if (accountDomain) accountDomain += (accountDomain.includes('?') ? '&' : '?') + 'utm_source=tiktok&utm_id=__CAMPAIGN_ID__&utm_campaign=__CAMPAIGN_NAME__'
 
       if (domainList.length > 0) L('system', '🌐 Domínio: ' + accountDomain)
 
