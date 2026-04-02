@@ -907,7 +907,7 @@ export default async function handler(req, res) {
             agPayload.view_attribution_window = 'ONE_DAY'
           }
 
-          if (body.bid_price && parseFloat(body.bid_price) > 0) {
+          if (!isCBO && body.bid_price && parseFloat(body.bid_price) > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
             agPayload.conversion_bid_price = parseFloat(body.bid_price)
           } else {
