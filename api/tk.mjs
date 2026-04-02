@@ -699,7 +699,7 @@ export default async function handler(req, res) {
           }
           if (baseCpa > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
-            agPayload.conversion_bid_price = humanizeValue(baseCpa, 10)
+            agPayload.conversion_bid_price = baseCpa
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }
@@ -898,7 +898,7 @@ export default async function handler(req, res) {
 
           if (body.bid_price && parseFloat(body.bid_price) > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
-            agPayload.conversion_bid_price = humanizeValue(parseFloat(body.bid_price), 10)
+            agPayload.conversion_bid_price = parseFloat(body.bid_price)
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }

@@ -77,8 +77,9 @@ function StepAccounts() {
     return <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-500/15 text-gray-400">{s?.replace('STATUS_','') || 'N/A'}</span>
   }
 
-  // Abre abas com stagger de 350ms para não ser bloqueado pelo browser
   function openInTikTok(ids: string[]) {
+    if (ids.length === 0) return
+    if (!window.confirm(`Tem certeza que deseja abrir ${ids.length} conta(s) no navegador?`)) return
     ids.forEach((id, i) => {
       setTimeout(() => {
         window.open(`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${id}&is_refresh_page=true`, '_blank')
@@ -263,7 +264,7 @@ function StepAccounts() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-semibold truncate">{a.advertiser_name}</div>
-                <div className="text-[11px] text-gray-500 font-mono">{a.advertiser_id}</div>
+                <a href={`https://ads.tiktok.com/i18n/manage/campaign?aadvid=${a.advertiser_id}&is_refresh_page=true`} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} className="text-[11px] text-gray-500 font-mono hover:text-hawk-accent hover:underline transition-colors">{a.advertiser_id}</a>
               </div>
               {statusBadge(a.status)}
               {campaignStatus[a.advertiser_id] === true && (
@@ -1092,6 +1093,7 @@ function StepLaunch() {
               <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(logs.map(l => l.time + ' [' + l.cat + '] ' + l.msg).join('\n')) }}>📋 Copy</button>
               {selectedAccounts.length > 0 && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
+                  if (!window.confirm(`Tem certeza que deseja abrir ${selectedAccounts.length} conta(s) no navegador?`)) return
                   selectedAccounts.forEach((acc: any, i: number) => {
                     setTimeout(() => {
                       window.open('https://ads.tiktok.com/i18n/manage/campaign?aadvid=' + acc.advertiser_id + '&is_refresh_page=true', '_blank')

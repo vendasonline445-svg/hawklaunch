@@ -257,6 +257,8 @@ export default function Dashboard() {
 
   function openAccountsInTikTok() {
     const toClose = accounts.filter((a: any) => selectedForClose.has(a.advertiser_id))
+    if (toClose.length === 0) return
+    if (!window.confirm(`Tem certeza que deseja abrir ${toClose.length} conta(s) no navegador?`)) return
     toClose.forEach((a: any, i: number) => {
       setTimeout(() => {
         window.open(`https://ads.tiktok.com/i18n/account/settings?aadvid=${a.advertiser_id}`, '_blank')
