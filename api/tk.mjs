@@ -691,13 +691,21 @@ export default async function handler(req, res) {
           results.adgroups++
           await rndDelay(400, 700)
 
+          var ALL_CTAS = ['SHOP_NOW','LEARN_MORE','BUY_NOW','ORDER_NOW','SIGN_UP','DOWNLOAD','CONTACT_US','VIEW_NOW','GET_QUOTE','VISIT_STORE','APPLY_NOW','BOOK_NOW','WATCH_NOW','READ_MORE','SUBSCRIBE','INTERESTED','INSTALL_NOW','LISTEN_NOW','PLAY_GAME','GET_SHOWTIMES','EXPERIENCE_NOW','PRE_ORDER_NOW','DONATE_NOW','GET_TICKETS_NOW','CHECK_IT_OUT','GET_YOURS','GET_NOW','CLICK_TO_SHOP_NOW','ORDER_YOURS_TODAY','PLACE_ORDER_TODAY']
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
+          var ctaRotation = 0
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+              var adCtas = [
+                { call_to_action: ALL_CTAS[ctaRotation % ALL_CTAS.length] },
+                { call_to_action: ALL_CTAS[(ctaRotation + 1) % ALL_CTAS.length] },
+                { call_to_action: ALL_CTAS[(ctaRotation + 2) % ALL_CTAS.length] },
+              ]
+              ctaRotation += 3
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -706,6 +714,7 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: appendUtm(accountDomain) }],
+                call_to_action_list: adCtas,
               }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
