@@ -204,7 +204,7 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
 }
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
-  var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&identity_type=AUTH_CODE&asset_type=CTA_AUTO_OPTIMIZED&content_type=LANDING_PAGE', token, 'GET', null, proxyRaw)
+  var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&new_version=true&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&language=en', token, 'GET', null, proxyRaw)
   if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length === 0) return { ok: false, error: 'CTA recommend failed' }
   var assets = rec.data.recommend_assets
   var content = []
@@ -555,6 +555,7 @@ export default async function handler(req, res) {
       var results = { campaigns: 0, adgroups: 0, ads: 0, spark_authorized: 0, cta_created: 0, errors: [], logs: [] }
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
+      var ctaCache = {}
       var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
 
       var proxyList = parseProxyList(body.proxy_list || [])
@@ -609,6 +610,33 @@ export default async function handler(req, res) {
           continue
         }
 
+        // CTA portfolio
+        var existingCtaId = (body.cta_cache && body.cta_cache[advId]) ? body.cta_cache[advId] : null
+        if (existingCtaId) {
+          ctaCache[advId] = existingCtaId
+          L(advId, '✅ CTA reutilizado: ' + existingCtaId)
+        } else {
+          L(advId, 'Creating CTA portfolio...')
+          try {
+            var cta = await getOrCreateCTA(token, advId, accountProxy)
+            if (cta.ok) {
+              ctaCache[advId] = cta.call_to_action_id
+              L(advId, '✅ CTA criado: ' + cta.call_to_action_id)
+              results.cta_created++
+              results.cta_cache = results.cta_cache || {}
+              results.cta_cache[advId] = cta.call_to_action_id
+            } else {
+              L(advId, '⚠️ CTA: ' + cta.error)
+              results.errors.push({ account: advId, step: 'cta', error: cta.error })
+              if (cta.error && cta.error.toLowerCase().includes('permission')) {
+                L(advId, '⛔ Sem permissão — conta ignorada')
+                noPermission = true
+              }
+            }
+          } catch(e) {
+            L(advId, '❌ CTA error: ' + e.message)
+          }
+        }
       }
 
       var campaignsPerAccount = body.campaigns_per_account || 1
@@ -618,6 +646,7 @@ export default async function handler(req, res) {
         // Pula conta sem permissão
         if (noPermission) { noPermission = false; continue }
         var accountSparks = sparkAuthCache[advId] || {}
+        var ctaId = ctaCache[advId] || null
         var pixelId = body.pixel_id || null
 
         if (!pixelId) {
@@ -691,21 +720,13 @@ export default async function handler(req, res) {
           results.adgroups++
           await rndDelay(400, 700)
 
-          var ALL_CTAS = ['SHOP_NOW','LEARN_MORE','ORDER_NOW','VISIT_STORE','SIGN_UP','CONTACT_US','VIEW_NOW','SUBSCRIBE','DOWNLOAD_NOW','GET_QUOTE']
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
-          var ctaRotation = 0
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
             for (var a = 0; a < adsPerCode; a++) {
               var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
-              var adCtas = [
-                { call_to_action: ALL_CTAS[ctaRotation % ALL_CTAS.length] },
-                { call_to_action: ALL_CTAS[(ctaRotation + 1) % ALL_CTAS.length] },
-                { call_to_action: ALL_CTAS[(ctaRotation + 2) % ALL_CTAS.length] },
-              ]
-              ctaRotation += 3
               var adPayload = {
                 request_id: makeRequestId(),
                 advertiser_id: advId,
@@ -714,9 +735,9 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
-                call_to_action_list: adCtas,
                 utm_params: UTM_PARAMS,
               }
+              if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
