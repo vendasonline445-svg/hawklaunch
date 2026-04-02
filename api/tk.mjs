@@ -886,6 +886,7 @@ export default async function handler(req, res) {
             landing_page_url: accountDomain,
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
+            location_ids: body.location_ids || ['3469034'],
             targeting_spec: targetingSpec,
             pacing: 'PACING_MODE_SMOOTH',
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
