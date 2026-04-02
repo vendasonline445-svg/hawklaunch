@@ -203,13 +203,17 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
   return { ok: false, error: lastError + ' (3 tentativas)' }
 }
 
+var WANTED_CTAS = ['buy it now','learn more','shop now','check it out','get yours now','shop today','order today','shop','order yours today','visit store']
+
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&new_version=true&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&language=en', token, 'GET', null, proxyRaw)
   if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length === 0) return { ok: false, error: 'CTA recommend failed' }
   var assets = rec.data.recommend_assets
+  var filtered = assets.filter(function(a) { return WANTED_CTAS.indexOf((a.asset_content || '').toLowerCase()) !== -1 })
+  if (filtered.length === 0) filtered = assets
   var content = []
-  for (var i = 0; i < assets.length; i++) {
-    content.push({ asset_content: assets[i].asset_content, asset_ids: assets[i].asset_ids })
+  for (var i = 0; i < filtered.length; i++) {
+    content.push({ asset_content: filtered[i].asset_content, asset_ids: filtered[i].asset_ids })
   }
   var createRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
