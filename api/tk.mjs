@@ -892,7 +892,9 @@ export default async function handler(req, res) {
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
 
-          if (!isCBO) {
+          if (isCBO) {
+            agPayload.budget_mode = 'BUDGET_MODE_INFINITE'
+          } else {
             agPayload.budget_mode = 'BUDGET_MODE_DAY'
             agPayload.budget = humanBudget
           }
