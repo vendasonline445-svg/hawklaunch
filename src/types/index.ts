@@ -1,4 +1,4 @@
-export type CampaignType = 'smart-spark' | 'smart-catalog' | 'manual'
+export type CampaignType = 'smart-spark' | 'smart-catalog' | 'manual' | 'queue'
 export type IdentityType = 'CUSTOMIZED_USER' | 'TT_USER' | 'BC_AUTH_TT' | 'AUTH_CODE'
 export type SparkMethod = 'pull' | 'push' | 'code'
 export type BudgetMode = 'cbo' | 'abo'

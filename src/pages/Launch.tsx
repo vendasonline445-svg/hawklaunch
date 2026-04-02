@@ -3,19 +3,24 @@ import { useAppStore } from '@/store'
 import { api } from '@/lib/api'
 import { useAccounts } from '@/hooks/useAccounts'
 
-const STEPS = ['Contas', 'Identity', 'Criativos', 'Estrutura', 'Targeting', 'Proxy', 'Lançar']
+const STEPS_DEFAULT = ['Contas', 'Identity', 'Criativos', 'Estrutura', 'Targeting', 'Proxy', 'Lançar']
+const STEPS_QUEUE = ['Fila', 'Contas', 'Smart+', 'Manual', 'Proxy', 'Lançar']
 
 export default function Launch() {
   const { currentStep, setStep, campaignType, setCampaignType } = useAppStore()
+  const isQueue = campaignType === 'queue'
+  const steps = isQueue ? STEPS_QUEUE : STEPS_DEFAULT
+
   return (
     <div className="animate-fade-in">
-      <div className="grid grid-cols-3 gap-4 mb-7">
+      <div className="grid grid-cols-4 gap-3 mb-7">
         {([
           { type: 'smart-spark', icon: '🔥', title: 'Smart+ V2', badge: 'novo', cls: 'badge-new' },
           { type: 'smart-catalog', icon: '⚡', title: 'Smart+ V1', badge: 'legado', cls: 'badge-popular' },
           { type: 'manual', icon: '🎯', title: 'Manual', badge: 'clássico', cls: 'badge-catalog' },
+          { type: 'queue', icon: '📋', title: 'Nova Fila', badge: 'combo', cls: 'badge-new' },
         ] as const).map(c => (
-          <div key={c.type} onClick={() => setCampaignType(c.type as any)}
+          <div key={c.type} onClick={() => { setCampaignType(c.type as any); setStep(0) }}
             className={`bg-hawk-card border-2 rounded-xl p-4 cursor-pointer transition-all relative ${campaignType === c.type ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border hover:border-gray-500'}`}>
             {campaignType === c.type && <div className="absolute top-2 right-2 w-5 h-5 bg-hawk-accent rounded-full flex items-center justify-center text-[10px] text-white font-bold">✓</div>}
             <span className="text-xl">{c.icon}</span>
@@ -25,25 +30,38 @@ export default function Launch() {
         ))}
       </div>
       <div className="flex gap-1 mb-7 bg-[#12141c] p-1.5 rounded-xl overflow-x-auto">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <div key={i} onClick={() => setStep(i)} className={`step-tab ${i === currentStep ? 'active' : ''} ${i < currentStep ? 'done' : ''}`}>
             <span className="block font-mono text-[10px] opacity-60 mb-0.5">{String(i+1).padStart(2,'0')}</span>{s}
           </div>
         ))}
       </div>
-      {currentStep === 0 && <StepAccounts />}
-      {currentStep === 1 && (campaignType === 'manual' ? <ManualStepIdentity /> : <StepIdentity />)}
-      {currentStep === 2 && (campaignType === 'manual' ? <ManualStepCreative /> : <StepCreative />)}
-      {currentStep === 3 && (campaignType === 'manual' ? <ManualStepStructure /> : <StepStructure />)}
-      {currentStep === 4 && (campaignType === 'manual' ? <ManualStepTargeting /> : <StepTargeting />)}
-      {currentStep === 5 && <StepProxy />}
-      {currentStep === 6 && <StepLaunch />}
+      {isQueue ? (
+        <>
+          {currentStep === 0 && <QueueStepBuilder />}
+          {currentStep === 1 && <StepAccounts nextStep={2} />}
+          {currentStep === 2 && <QueueSmartConfig />}
+          {currentStep === 3 && <QueueManualConfig />}
+          {currentStep === 4 && <StepProxy prevStep={3} nextStep={5} />}
+          {currentStep === 5 && <StepLaunch />}
+        </>
+      ) : (
+        <>
+          {currentStep === 0 && <StepAccounts />}
+          {currentStep === 1 && (campaignType === 'manual' ? <ManualStepIdentity /> : <StepIdentity />)}
+          {currentStep === 2 && (campaignType === 'manual' ? <ManualStepCreative /> : <StepCreative />)}
+          {currentStep === 3 && (campaignType === 'manual' ? <ManualStepStructure /> : <StepStructure />)}
+          {currentStep === 4 && (campaignType === 'manual' ? <ManualStepTargeting /> : <StepTargeting />)}
+          {currentStep === 5 && <StepProxy />}
+          {currentStep === 6 && <StepLaunch />}
+        </>
+      )}
     </div>
   )
 }
 
 /* ====== STEP 0: ACCOUNTS (cached + TikTok links) ====== */
-function StepAccounts() {
+function StepAccounts({ nextStep = 1 }: { nextStep?: number }) {
   const { setStep, bcId, setSelectedAccounts } = useAppStore()
   const { accounts, selected, loading, loadAccounts, toggle, selectAll, selectNone, setSelected, campaignStatus, checkingCampaigns, campaignCheckProgress } = useAccounts(bcId)
   const [search, setSearch] = useState('')
@@ -307,8 +325,8 @@ function StepAccounts() {
         <div className="text-xs text-hawk-accent font-semibold">{selected.size} conta(s) selecionada(s)</div>
         <button className="btn btn-primary" onClick={() => {
           setSelectedAccounts(accounts.filter(a => selected.has(a.advertiser_id)))
-          setStep(1)
-        }} disabled={selected.size === 0}>Próximo → Identity</button>
+          setStep(nextStep)
+        }} disabled={selected.size === 0}>Próximo →</button>
       </div>
     </div>
   )
@@ -591,7 +609,7 @@ function StepTargeting() {
     <div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">País</label><select className="select"><option>🇧🇷 Brasil</option></select></div><div><label className="label mb-1.5 block">Idioma</label><select className="select"><option>Português</option></select></div></div></div>
     <StepFooter prev={3} next={5}/></div>
 }
-function StepProxy() {
+function StepProxy({ prevStep = 4, nextStep = 6 }: { prevStep?: number; nextStep?: number }) {
   const [proxyText, setProxyText] = useState(() => localStorage.getItem('hawklaunch_proxy_list') || '')
   const [testing, setTesting] = useState(false)
   const [testResults, setTestResults] = useState<any[]>([])
@@ -663,7 +681,7 @@ function StepProxy() {
           📋 {proxyLines.slice(0, 3).map((p, i) => `Conta ${i+1} → proxy ${i+1}`).join(' · ')}{proxyLines.length < 3 ? ' (demais rotacionam)' : '...'}
         </div>
       )}
-      <StepFooter prev={4} next={6}/>
+      <StepFooter prev={prevStep} next={nextStep}/>
     </div>
   )
 }
@@ -718,7 +736,9 @@ function StepLaunch() {
 
   async function launch() {
     setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true); abortRef.current = false
-    if (campaignType === 'manual') {
+    if (campaignType === 'queue') {
+      await launchQueue()
+    } else if (campaignType === 'manual') {
       await launchManual()
     } else {
       await launchSmart()
@@ -952,6 +972,142 @@ function StepLaunch() {
     if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
   }
 
+  async function launchQueue() {
+    const smartCount = parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '0')
+    const manualCount = parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '0')
+
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter(Boolean)
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter(Boolean)
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
+
+    const smartBudget = parseInt(localStorage.getItem('hawklaunch_queue_smart_budget') || '80')
+    const smartName = localStorage.getItem('hawklaunch_queue_smart_name') || 'S+'
+    const targetCpa = parseInt(localStorage.getItem('hawklaunch_target_cpa') || '0')
+    const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '2')
+
+    const manualBudget = parseInt(localStorage.getItem('hawklaunch_queue_manual_budget') || '50')
+    const manualName = localStorage.getItem('hawklaunch_queue_manual_name') || 'MN'
+    const identityType = localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE'
+    const objective = localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS'
+    const budgetMode = localStorage.getItem('hawklaunch_manual_budget_mode') || 'cbo'
+    const bidPrice = localStorage.getItem('hawklaunch_manual_bid_price') || '0'
+    const callToAction = localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW'
+    const autoTarget = localStorage.getItem('hawklaunch_manual_auto_target') !== 'false'
+    const ageGroups = (() => { try { return JSON.parse(localStorage.getItem('hawklaunch_manual_age_groups') || '[]') } catch { return [] } })()
+    const gender = localStorage.getItem('hawklaunch_manual_gender') || 'GENDER_UNLIMITED'
+    const osTarget = (() => { try { return JSON.parse(localStorage.getItem('hawklaunch_manual_os') || '["ANDROID","IOS"]') } catch { return ['ANDROID', 'IOS'] } })()
+
+    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
+    if (!destUrl && domainList.length === 0) { addLog('ERROR', 'URL de destino não configurada!'); return }
+
+    localStorage.removeItem('hawklaunch_cta_cache')
+    const ctaCacheSaved: Record<string, string> = {}
+
+    addLog('INFO', 'Iniciando lançamento Fila: ' + smartCount + ' Smart+ + ' + manualCount + ' Manual por conta')
+    addLog('INFO', selectedAccounts.length + ' conta(s) selecionada(s)')
+    if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
+    else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
+    if (smartCount > 0) addLog('DEBUG', 'Smart+: R$' + smartBudget + '/dia | CPA: ' + (targetCpa ? 'R$' + targetCpa : 'Auto') + ' | Nome: ' + smartName)
+    if (manualCount > 0) addLog('DEBUG', 'Manual: R$' + manualBudget + '/dia | ' + budgetMode.toUpperCase() + ' | Nome: ' + manualName)
+    setProgress(5)
+
+    const scheduleStart = buildScheduleStart()
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
+    let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+    let allErrors: any[] = []
+    const totalCampsPerAccount = smartCount + manualCount
+
+    const billingByObjective: Record<string, string> = { CONVERSIONS: 'OCPM', TRAFFIC: 'OCPM', REACH: 'CPM', VIDEO_VIEWS: 'OCPM' }
+    const goalByObjective: Record<string, string> = { CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'VIDEO_PLAY' }
+
+    const smartPayload = {
+      accounts: selectedAccounts, campaign_name: smartName, adgroup_name: 'AG ' + smartName, ad_name: smartName,
+      spark_codes: sparkCodes, rotation: true, campaigns_per_account: 1, ads_per_code: adsPerCode,
+      landing_page_url: destUrl, domain_list: domainList, cta_cache: ctaCacheSaved, start_paused: startPaused, ad_texts: adTexts,
+      budget: smartBudget, target_cpa: targetCpa || undefined,
+      pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+      optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+      location_ids: ['3469034'], schedule_start: scheduleStart,
+    }
+
+    const manualPayload = {
+      campaign_name: manualName, adgroup_name: 'AG ' + manualName, ad_name: manualName,
+      objective_type: objective, budget_mode: budgetMode, budget: manualBudget,
+      bid_price: parseFloat(bidPrice) > 0 ? bidPrice : undefined,
+      billing_event: billingByObjective[objective] || 'OCPM', optimization_goal: goalByObjective[objective] || 'CONVERT',
+      identity_type: identityType, spark_codes: sparkCodes, video_ids: [] as string[], rotation: true, ads_per_code: adsPerCode,
+      call_to_action: callToAction, landing_page_url: destUrl, domain_list: domainList, ad_texts: adTexts,
+      pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+      optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+      start_paused: startPaused, location_ids: ['3469034'], schedule_start: scheduleStart,
+      age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
+    }
+
+    try {
+      for (let ai = 0; ai < selectedAccounts.length; ai++) {
+        const acc = selectedAccounts[ai]
+        addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
+
+        let seqCounter = 1
+        let accountNoPermission = false
+
+        // Smart+ campaigns
+        if (smartCount > 0) {
+          addLog('INFO', '🔥 Smart+ — ' + smartCount + ' campanha(s)...')
+          for (let cp = 0; cp < smartCount; cp++) {
+            if (abortRef.current || accountNoPermission) break
+            if (seqCounter > 1) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
+            setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
+
+            const singlePayload = { ...smartPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
+            try {
+              const r = await api.launchSmart(singlePayload)
+              if (r.code === 0 && r.data) {
+                const d = r.data as any
+                totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
+                if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
+                if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
+                if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
+              } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+            } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+            seqCounter++
+          }
+        }
+
+        // Manual campaigns
+        if (manualCount > 0 && !accountNoPermission) {
+          addLog('INFO', '🎯 Manual — ' + manualCount + ' campanha(s)...')
+          for (let cp = 0; cp < manualCount; cp++) {
+            if (abortRef.current || accountNoPermission) break
+            if (seqCounter > 1) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
+            setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
+
+            const singlePayload = { ...manualPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
+            try {
+              const r = await api.launchManual(singlePayload)
+              if (r.code === 0 && r.data) {
+                const d = r.data as any
+                totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
+                if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
+                if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
+              } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+            } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+            seqCounter++
+          }
+        }
+      }
+    } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
+
+    setProgress(100)
+    setResult(totalResult)
+    addLog('OK', '✅ MISSÃO COMPLETA! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
+    if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
+  }
+
   function catColor(cat: string) {
     if (cat === 'OK') return 'text-green-400 bg-green-500/15'
     if (cat === 'ERROR') return 'text-red-400 bg-red-500/15'
@@ -962,7 +1118,16 @@ function StepLaunch() {
 
   const manualIdentityType = localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE'
   const manualVideoIds = (() => { try { const r = localStorage.getItem('hawklaunch_manual_video_ids'); return r ? JSON.parse(r) : [] } catch { return [] } })()
-  const checklist = campaignType === 'manual' ? [
+  const queueSmartCount = parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '0')
+  const queueManualCount = parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '0')
+  const checklist = campaignType === 'queue' ? [
+    { ok: true, t: 'Conectado ao TikTok' },
+    { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
+    { ok: queueSmartCount + queueManualCount > 0, t: '📋 Fila: ' + queueSmartCount + ' Smart+ + ' + queueManualCount + ' Manual por conta' },
+    { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
+    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim() || !!(localStorage.getItem('hawklaunch_domain_list') || '').trim(), t: 'URL de destino configurada' },
+    { ok: true, t: (localStorage.getItem('hawklaunch_proxy_list') || '').trim() ? '🛡️ Proxy: ' + (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim()).length + ' proxy(ies)' : '⚠️ Sem proxy (IP da Vercel)' },
+  ] : campaignType === 'manual' ? [
     { ok: true, t: 'Conectado ao TikTok' },
     { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
     { ok: true, t: '🎯 Modo: Manual — ' + (localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS') },
@@ -1140,7 +1305,7 @@ function StepLaunch() {
         className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
       </button>
-      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'manual' ? 'Campanha Manual' : 'Smart+ Spark Ads'}</p>
+      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'queue' ? 'Fila: ' + queueSmartCount + ' Smart+ + ' + queueManualCount + ' Manual' : campaignType === 'manual' ? 'Campanha Manual' : 'Smart+ Spark Ads'}</p>
     </div>
 
     {/* Last result summary */}
@@ -1162,7 +1327,7 @@ function StepLaunch() {
     {showModal && <LaunchModal />}
 
     <div className="flex justify-between mt-6 pt-4 border-t border-hawk-border">
-      <button className="btn btn-secondary" onClick={() => setStep(5)}>← Proxy</button>
+      <button className="btn btn-secondary" onClick={() => setStep(campaignType === 'queue' ? 4 : 5)}>← Proxy</button>
     </div>
   </div>
 }
@@ -1663,6 +1828,377 @@ function ManualStepTargeting() {
       </div>
 
       <StepFooter prev={3} next={5} />
+    </div>
+  )
+}
+
+/* ====== QUEUE: STEP 0 — FILA BUILDER ====== */
+function QueueStepBuilder() {
+  const { setStep } = useAppStore()
+  const [smartCount, setSmartCount] = useState(() => parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '3'))
+  const [manualCount, setManualCount] = useState(() => parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '2'))
+
+  function saveSmart(v: number) { const n = Math.max(0, Math.min(20, v)); setSmartCount(n); localStorage.setItem('hawklaunch_queue_smart_count', String(n)) }
+  function saveManual(v: number) { const n = Math.max(0, Math.min(20, v)); setManualCount(n); localStorage.setItem('hawklaunch_queue_manual_count', String(n)) }
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center gap-2.5 mb-5">
+        <div className="w-8 h-8 bg-hawk-accent/10 rounded-md flex items-center justify-center">📋</div>
+        <h2 className="text-lg font-bold">Fila de Lançamento</h2>
+      </div>
+      <p className="text-sm text-gray-400 mb-6">Configure quantas campanhas de cada tipo serão criadas <strong className="text-gray-300">por conta</strong>.</p>
+
+      <div className="space-y-3 mb-6">
+        <div className="flex items-center justify-between p-4 bg-hawk-input border border-hawk-border rounded-lg">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔥</span>
+            <div><div className="text-sm font-bold">Smart+ V2</div><div className="text-[11px] text-gray-500">Campanhas automatizadas pelo TikTok</div></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="w-8 h-8 bg-hawk-bg border border-hawk-border rounded-lg flex items-center justify-center text-lg hover:border-gray-500 transition-colors" onClick={() => saveSmart(smartCount - 1)}>-</button>
+            <input className="w-12 text-center text-lg font-bold bg-transparent outline-none" type="number" min={0} max={20} value={smartCount} onChange={e => saveSmart(parseInt(e.target.value) || 0)} />
+            <button className="w-8 h-8 bg-hawk-bg border border-hawk-border rounded-lg flex items-center justify-center text-lg hover:border-gray-500 transition-colors" onClick={() => saveSmart(smartCount + 1)}>+</button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-hawk-input border border-hawk-border rounded-lg">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎯</span>
+            <div><div className="text-sm font-bold">Manual</div><div className="text-[11px] text-gray-500">Controle total: budget, bid, targeting</div></div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="w-8 h-8 bg-hawk-bg border border-hawk-border rounded-lg flex items-center justify-center text-lg hover:border-gray-500 transition-colors" onClick={() => saveManual(manualCount - 1)}>-</button>
+            <input className="w-12 text-center text-lg font-bold bg-transparent outline-none" type="number" min={0} max={20} value={manualCount} onChange={e => saveManual(parseInt(e.target.value) || 0)} />
+            <button className="w-8 h-8 bg-hawk-bg border border-hawk-border rounded-lg flex items-center justify-center text-lg hover:border-gray-500 transition-colors" onClick={() => saveManual(manualCount + 1)}>+</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 bg-hawk-accent/5 border border-hawk-accent/20 rounded-lg mb-4">
+        <div className="text-sm font-semibold text-hawk-accent">{smartCount + manualCount} campanhas por conta</div>
+        <div className="text-[11px] text-gray-400 mt-1">
+          {smartCount > 0 && smartCount + ' Smart+'}{smartCount > 0 && manualCount > 0 && ' + '}{manualCount > 0 && manualCount + ' Manual'}
+          {smartCount + manualCount === 0 && 'Selecione pelo menos 1 campanha'}
+        </div>
+      </div>
+
+      <div className="bg-blue-500/8 border border-blue-500/20 rounded-lg p-4 flex gap-3 mb-4">
+        <span className="text-lg">💡</span>
+        <div className="text-[12px] text-gray-300 leading-relaxed">
+          Cada conta recebe <strong>1 domínio</strong> e <strong>1 Spark code</strong> por rotação. Smart+ e Manual são lançados sequencialmente com naming contínuo (01, 02... 05).
+        </div>
+      </div>
+
+      <div className="flex justify-end mt-6 pt-4 border-t border-hawk-border">
+        <button className="btn btn-primary" onClick={() => setStep(1)} disabled={smartCount + manualCount === 0}>Próximo → Contas</button>
+      </div>
+    </div>
+  )
+}
+
+/* ====== QUEUE: STEP 2 — SMART+ CONFIG ====== */
+function QueueSmartConfig() {
+  const { setStep, selectedAccounts } = useAppStore()
+  const smartCount = parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '0')
+
+  const [sparkCodes, setSparkCodes] = useState(() => localStorage.getItem('hawklaunch_spark_codes') || '')
+  const [destinationUrl, setDestinationUrl] = useState(() => localStorage.getItem('hawklaunch_dest_url') || '')
+  const [domainList, setDomainList] = useState(() => localStorage.getItem('hawklaunch_domain_list') || '')
+  const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
+  const [budget, setBudget] = useState(() => localStorage.getItem('hawklaunch_queue_smart_budget') || '80')
+  const [name, setName] = useState(() => localStorage.getItem('hawklaunch_queue_smart_name') || '')
+  const [targetCpa, setTargetCpa] = useState(() => localStorage.getItem('hawklaunch_target_cpa') || '')
+  const [pixels, setPixels] = useState<any[]>([])
+  const [loadingPixels, setLoadingPixels] = useState(false)
+  const [selectedPixel, setSelectedPixel] = useState(() => localStorage.getItem('hawklaunch_pixel_id') || '')
+
+  const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(Boolean)
+  const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
+
+  function loadPixels() {
+    if (!selectedAccounts[0]) return
+    setLoadingPixels(true)
+    api.getPixels(selectedAccounts[0].advertiser_id)
+      .then((res: any) => {
+        const list = res.data?.pixels || []
+        setPixels(list)
+        if (list.length > 0 && !selectedPixel) { setSelectedPixel(list[0].pixel_id); localStorage.setItem('hawklaunch_pixel_id', list[0].pixel_id) }
+      })
+      .finally(() => setLoadingPixels(false))
+  }
+
+  if (smartCount === 0) return (
+    <div className="card animate-fade-in">
+      <h2 className="text-lg font-bold mb-4">🔥 Smart+ Config</h2>
+      <div className="text-center py-12 text-gray-500">0 campanhas Smart+ na fila — pule esta etapa.</div>
+      <StepFooter prev={1} next={3} />
+    </div>
+  )
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-lg font-bold">🔥 Smart+ Config</h2>
+        <span className="text-xs px-2.5 py-1 rounded-md bg-hawk-accent/15 text-hawk-accent font-bold">{smartCount} campanhas/conta</span>
+      </div>
+
+      {/* Criativos — shared */}
+      <details open className="mb-4 group">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300 flex items-center gap-2">
+          🎬 Criativos <span className="text-[10px] text-gray-500 font-normal">(compartilhado com Manual)</span>
+        </summary>
+        <div className="space-y-3 pl-1">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label">Spark Ad Codes</label>
+              <span className="text-xs text-gray-400">{sparkCodeList.length} código(s)</span>
+            </div>
+            <textarea className="input font-mono text-xs min-h-[80px]" placeholder="Cole os códigos (um por linha)" value={sparkCodes}
+              onChange={e => { setSparkCodes(e.target.value); localStorage.setItem('hawklaunch_spark_codes', e.target.value) }} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1.5 block">URL de destino</label>
+              <input className="input" placeholder="https://seusite.com/oferta" value={destinationUrl}
+                onChange={e => { setDestinationUrl(e.target.value); localStorage.setItem('hawklaunch_dest_url', e.target.value) }} />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="label">Rodízio de domínios</label>
+                <span className="text-xs text-gray-400">{domainLines.length} domínio(s)</span>
+              </div>
+              <textarea className="input font-mono text-xs min-h-[60px]" placeholder={"https://loja1.com\nhttps://loja2.com"} value={domainList}
+                onChange={e => { setDomainList(e.target.value); localStorage.setItem('hawklaunch_domain_list', e.target.value) }} />
+            </div>
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Textos do anúncio</label>
+            <textarea className="input min-h-[50px]" placeholder="Oferta imperdível!" value={adTexts}
+              onChange={e => { setAdTexts(e.target.value); localStorage.setItem('hawklaunch_ad_texts', e.target.value) }} />
+          </div>
+        </div>
+      </details>
+
+      {/* Estrutura */}
+      <details open className="mb-4">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300">🏗️ Estrutura Smart+</summary>
+        <div className="space-y-3 pl-1">
+          <div className="flex items-center justify-between">
+            <label className="label">Pixel</label>
+            <div className="flex items-center gap-2">
+              {selectedPixel && <span className="text-green-400 text-[11px]">✓ {selectedPixel}</span>}
+              <button className="btn btn-secondary btn-sm" onClick={loadPixels}>{loadingPixels ? '⏳' : '📥 Carregar'}</button>
+            </div>
+          </div>
+          {pixels.length > 0 && (
+            <div className="space-y-1">
+              {pixels.map((p: any) => (
+                <div key={p.pixel_id} onClick={() => { setSelectedPixel(p.pixel_id); localStorage.setItem('hawklaunch_pixel_id', p.pixel_id) }}
+                  className={'flex items-center gap-2 px-3 py-2 rounded cursor-pointer border text-xs ' + (selectedPixel === p.pixel_id ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border')}>
+                  <span className={selectedPixel === p.pixel_id ? 'text-hawk-accent' : 'text-gray-500'}>{selectedPixel === p.pixel_id ? '✓' : '○'}</span>
+                  <span>{p.pixel_name || 'Pixel'}</span>
+                  <span className="text-gray-500 font-mono">{p.pixel_id}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label mb-1.5 block">Budget diário</label>
+              <input className="input" type="number" value={budget} onChange={e => { setBudget(e.target.value); localStorage.setItem('hawklaunch_queue_smart_budget', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1.5 block">Target CPA</label>
+              <input className="input" type="number" placeholder="Auto" value={targetCpa} onChange={e => { setTargetCpa(e.target.value); localStorage.setItem('hawklaunch_target_cpa', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1.5 block">Ads/código</label>
+              <input className="input" type="number" min={1} max={10} defaultValue={localStorage.getItem('hawklaunch_ads_per_code') || '2'}
+                onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1.5 block">Prefixo da campanha</label>
+              <input className="input" value={name} placeholder="S+ OFERTA" onChange={e => { setName(e.target.value); localStorage.setItem('hawklaunch_queue_smart_name', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1.5 block">Evento de otimização</label>
+              <select className="select" defaultValue={localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING'} onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}>
+                <option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option>
+              </select>
+            </div>
+          </div>
+          <div className="px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">{name || 'S+ OFERTA'} 01</div>
+        </div>
+      </details>
+
+      <StepFooter prev={1} next={3} />
+    </div>
+  )
+}
+
+/* ====== QUEUE: STEP 3 — MANUAL CONFIG ====== */
+function QueueManualConfig() {
+  const { setStep } = useAppStore()
+  const manualCount = parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '0')
+
+  const [identityType, setIdentityType] = useState(() => localStorage.getItem('hawklaunch_manual_identity_type') || 'AUTH_CODE')
+  const [cta, setCta] = useState(() => localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW')
+  const [objective, setObjective] = useState(() => localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS')
+  const [budgetMode, setBudgetMode] = useState(() => localStorage.getItem('hawklaunch_manual_budget_mode') || 'cbo')
+  const [budget, setBudget] = useState(() => localStorage.getItem('hawklaunch_queue_manual_budget') || '50')
+  const [bidPrice, setBidPrice] = useState(() => localStorage.getItem('hawklaunch_manual_bid_price') || '')
+  const [name, setName] = useState(() => localStorage.getItem('hawklaunch_queue_manual_name') || '')
+
+  const [autoTarget, setAutoTarget] = useState(() => localStorage.getItem('hawklaunch_manual_auto_target') !== 'false')
+  const [ageGroups, setAgeGroups] = useState<Set<string>>(() => {
+    try { const r = localStorage.getItem('hawklaunch_manual_age_groups'); return r ? new Set(JSON.parse(r)) : new Set(['AGE_18_24','AGE_25_34','AGE_35_44','AGE_45_54','AGE_55_100']) } catch { return new Set(['AGE_18_24','AGE_25_34','AGE_35_44','AGE_45_54','AGE_55_100']) }
+  })
+  const [gender, setGender] = useState(() => localStorage.getItem('hawklaunch_manual_gender') || 'GENDER_UNLIMITED')
+  const [os, setOs] = useState<Set<string>>(() => {
+    try { const r = localStorage.getItem('hawklaunch_manual_os'); return r ? new Set(JSON.parse(r)) : new Set(['ANDROID','IOS']) } catch { return new Set(['ANDROID','IOS']) }
+  })
+
+  const CTA_OPTIONS = [
+    { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' }, { v: 'ORDER_NOW', l: 'Order now' },
+    { v: 'BUY_NOW', l: 'Buy now' }, { v: 'SIGN_UP', l: 'Sign up' }, { v: 'CONTACT_US', l: 'Contact us' },
+    { v: 'GET_NOW', l: 'Get it now' }, { v: 'GET_YOURS', l: 'Get yours' }, { v: 'VIEW_NOW', l: 'View now' },
+  ]
+  const OBJECTIVES = [
+    { v: 'CONVERSIONS', l: '💰 Conversões' }, { v: 'TRAFFIC', l: '🖱️ Tráfego' },
+    { v: 'REACH', l: '📡 Alcance' }, { v: 'VIDEO_VIEWS', l: '▶️ Views' },
+  ]
+
+  function toggleAge(v: string) { const n = new Set(ageGroups); n.has(v) ? n.delete(v) : n.add(v); setAgeGroups(n); localStorage.setItem('hawklaunch_manual_age_groups', JSON.stringify([...n])) }
+  function toggleOs(v: string) { const n = new Set(os); n.has(v) ? n.delete(v) : n.add(v); setOs(n); localStorage.setItem('hawklaunch_manual_os', JSON.stringify([...n])) }
+
+  if (manualCount === 0) return (
+    <div className="card animate-fade-in">
+      <h2 className="text-lg font-bold mb-4">🎯 Manual Config</h2>
+      <div className="text-center py-12 text-gray-500">0 campanhas Manual na fila — pule esta etapa.</div>
+      <StepFooter prev={2} next={4} />
+    </div>
+  )
+
+  return (
+    <div className="card animate-fade-in">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-lg font-bold">🎯 Manual Config</h2>
+        <span className="text-xs px-2.5 py-1 rounded-md bg-blue-500/15 text-blue-400 font-bold">{manualCount} campanhas/conta</span>
+      </div>
+
+      {/* Identity */}
+      <details open className="mb-4">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300">🔗 Identity</summary>
+        <div className="pl-1">
+          <div className="grid grid-cols-2 gap-3">
+            {[{ key: 'AUTH_CODE', icon: '🔗', title: 'Spark Ads' }, { key: 'CUSTOMIZED_USER', icon: '⚡', title: 'Custom User' }].map(t => (
+              <div key={t.key} onClick={() => { setIdentityType(t.key); localStorage.setItem('hawklaunch_manual_identity_type', t.key) }}
+                className={`bg-hawk-input border-2 rounded-lg p-3 cursor-pointer text-center text-xs font-bold ${identityType === t.key ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+                <span className="mr-1">{t.icon}</span>{t.title}
+              </div>
+            ))}
+          </div>
+          {identityType === 'AUTH_CODE' && <div className="mt-2 text-[11px] text-green-400">✓ Usa os mesmos Spark Codes configurados no passo Smart+</div>}
+        </div>
+      </details>
+
+      {/* Creative */}
+      <details open className="mb-4">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300">🎬 Criativos</summary>
+        <div className="pl-1">
+          <div className="text-[11px] text-gray-500 mb-3">URLs, domínios e textos compartilhados do passo anterior.</div>
+          <label className="label mb-2 block">Call to Action</label>
+          <div className="flex flex-wrap gap-1.5">
+            {CTA_OPTIONS.map(c => (
+              <div key={c.v} onClick={() => { setCta(c.v); localStorage.setItem('hawklaunch_manual_cta', c.v) }}
+                className={`chip text-[10px] ${cta === c.v ? 'active' : ''}`}>{c.l}</div>
+            ))}
+          </div>
+        </div>
+      </details>
+
+      {/* Estrutura */}
+      <details open className="mb-4">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300">🏗️ Estrutura</summary>
+        <div className="space-y-3 pl-1">
+          <div>
+            <label className="label mb-2 block">Objetivo</label>
+            <div className="grid grid-cols-4 gap-2">
+              {OBJECTIVES.map(o => (
+                <div key={o.v} onClick={() => { setObjective(o.v); localStorage.setItem('hawklaunch_manual_objective', o.v) }}
+                  className={`bg-hawk-input border-2 rounded-lg p-2 cursor-pointer text-center text-[11px] font-bold ${objective === o.v ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+                  {o.l}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label mb-2 block">Modo de orçamento</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[{ v: 'cbo', l: 'CBO — Orçamento na campanha' }, { v: 'abo', l: 'ABO — Orçamento no ad group' }].map(b => (
+                <div key={b.v} onClick={() => { setBudgetMode(b.v); localStorage.setItem('hawklaunch_manual_budget_mode', b.v) }}
+                  className={`bg-hawk-input border-2 rounded-lg p-2 cursor-pointer text-center text-xs font-bold ${budgetMode === b.v ? 'border-hawk-accent bg-hawk-accent/5' : 'border-hawk-border'}`}>
+                  {b.l}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label mb-1.5 block">Budget diário</label>
+              <input className="input" type="number" value={budget} onChange={e => { setBudget(e.target.value); localStorage.setItem('hawklaunch_queue_manual_budget', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1.5 block">Lance CPA <span className="text-[10px] text-gray-500">(0 = auto)</span></label>
+              <input className="input" type="number" placeholder="0" value={bidPrice} onChange={e => { setBidPrice(e.target.value); localStorage.setItem('hawklaunch_manual_bid_price', e.target.value) }} />
+            </div>
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Prefixo da campanha</label>
+            <input className="input" value={name} placeholder="MN OFERTA" onChange={e => { setName(e.target.value); localStorage.setItem('hawklaunch_queue_manual_name', e.target.value) }} />
+          </div>
+          <div className="px-3 py-2 bg-hawk-input rounded font-mono text-sm text-hawk-accent">{name || 'MN OFERTA'} 01</div>
+        </div>
+      </details>
+
+      {/* Targeting */}
+      <details className="mb-4">
+        <summary className="text-sm font-bold cursor-pointer mb-3 text-gray-300">🎯 Targeting</summary>
+        <div className="pl-1">
+          <ToggleRow title="Targeting automático" desc="IA do TikTok define o público" defaultOn={autoTarget} onChange={v => { setAutoTarget(v); localStorage.setItem('hawklaunch_manual_auto_target', String(v)) }} />
+          <div className={autoTarget ? 'opacity-40 pointer-events-none mt-3' : 'mt-3'}>
+            <div className="mb-3">
+              <label className="label mb-1.5 block text-xs">Faixa etária</label>
+              <div className="flex flex-wrap gap-1.5">
+                {[{v:'AGE_18_24',l:'18-24'},{v:'AGE_25_34',l:'25-34'},{v:'AGE_35_44',l:'35-44'},{v:'AGE_45_54',l:'45-54'},{v:'AGE_55_100',l:'55+'}].map(a=>(
+                  <div key={a.v} onClick={()=>toggleAge(a.v)} className={`chip text-[10px] ${ageGroups.has(a.v)?'active':''}`}>{a.l}</div>
+                ))}
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="label mb-1.5 block text-xs">Gênero</label>
+              <div className="flex gap-1.5">
+                {[{v:'GENDER_UNLIMITED',l:'Todos'},{v:'GENDER_MALE',l:'Masculino'},{v:'GENDER_FEMALE',l:'Feminino'}].map(g=>(
+                  <div key={g.v} onClick={()=>{setGender(g.v);localStorage.setItem('hawklaunch_manual_gender',g.v)}} className={`chip text-[10px] ${gender===g.v?'active':''}`}>{g.l}</div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="label mb-1.5 block text-xs">Sistema operacional</label>
+              <div className="flex gap-1.5">
+                {[{v:'ANDROID',l:'🤖 Android'},{v:'IOS',l:'🍎 iOS'}].map(o=>(
+                  <div key={o.v} onClick={()=>toggleOs(o.v)} className={`chip text-[10px] ${os.has(o.v)?'active':''}`}>{o.l}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <StepFooter prev={2} next={4} />
     </div>
   )
 }
