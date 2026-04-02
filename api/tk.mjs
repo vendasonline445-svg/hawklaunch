@@ -881,7 +881,7 @@ export default async function handler(req, res) {
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
-            creative_material_mode: 'CUSTOM',
+            creative_material_mode: 'SMART_CREATIVE',
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
