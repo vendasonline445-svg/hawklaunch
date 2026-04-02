@@ -881,6 +881,7 @@ export default async function handler(req, res) {
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
+            creative_material_mode: 'CUSTOM',
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
@@ -926,44 +927,60 @@ export default async function handler(req, res) {
           results.adgroups++
           await rndDelay(1500, 3000)
 
-          // Ads — Spark (AUTH_CODE) mode
+          // Ads — Spark (AUTH_CODE) mode — Smart Creative (ACO)
           if (body.identity_type === 'AUTH_CODE') {
             var sparkCodes2 = body.spark_codes || []
             var codesForAds = body.rotation ? [sparkCodes2[accountIndex % sparkCodes2.length]] : sparkCodes2
-            var adsPerCode = body.ads_per_code || 1
+
+            // Build media_info_list from all spark codes
+            var mediaInfoList = []
             for (var c = 0; c < codesForAds.length; c++) {
               var sd = sparkAuthCache[codesForAds[c]]
               if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' não autorizado'); continue }
-              for (var a = 0; a < adsPerCode; a++) {
-                if (c > 0 || a > 0) await rndDelay(3000, 5000)
-                var adSuffixM = Math.random().toString(36).substring(2, 6).toUpperCase()
-                var creativeM = {
-                  ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffixM,
-                  ad_format: 'SINGLE_VIDEO',
+              mediaInfoList.push({
+                media_info: {
                   tiktok_item_id: sd.item_id,
                   identity_id: sd.identity_id,
                   identity_type: 'AUTH_CODE',
-                  call_to_action: body.call_to_action || 'SHOP_NOW',
-                  landing_page_url: accountDomain,
-                  }
-                if (body.ad_texts && body.ad_texts.length > 0) creativeM.ad_text = body.ad_texts[(c * adsPerCode + a) % body.ad_texts.length]
-                var adPayloadM = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeM] }
-                L(advId, 'Ad Spark ' + (c+1) + '-' + (a+1) + '...')
-                var adResM = await tt('/ad/create/', token, 'POST', adPayloadM, accountProxy)
-                if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
-                  await rndDelay(8000, 12000)
-                  adResM = await tt('/ad/create/', token, 'POST', adPayloadM, accountProxy)
                 }
-                if (adResM.code !== 0) {
-                  L(advId, '❌ Ad: ' + adResM.message)
-                  results.errors.push({ account: advId, step: 'ad', error: adResM.message })
-                } else {
-                  var adIdM = (adResM.data && adResM.data.ad_ids) ? adResM.data.ad_ids[0] : '?'
-                  L(advId, '✅ Ad ' + (c+1) + '-' + (a+1) + ' | camp=' + campaignId + ' ag=' + adgroupId + ' ad=' + adIdM)
-                  results.ads++
-                  results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, ad_id: adIdM, campaign_name: campPayload.campaign_name })
-                }
-              }
+              })
+            }
+            if (mediaInfoList.length === 0) { L(advId, '⚠️ Nenhum Spark autorizado'); continue }
+
+            // Build title_list (max 5)
+            var titleList = (body.ad_texts && body.ad_texts.length > 0)
+              ? body.ad_texts.slice(0, 5).map(function(t) { return { title: t } })
+              : [{ title: 'Shop now' }]
+
+            // Build call_to_action_list (max 3)
+            var ctaList = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
+
+            var acoPayload = {
+              advertiser_id: advId,
+              adgroup_id: adgroupId,
+              media_info_list: mediaInfoList,
+              title_list: titleList,
+              landing_page_urls: [{ landing_page_url: accountDomain }],
+              common_material: {
+                ad_name: (body.ad_name || campPayload.campaign_name),
+                is_smart_creative: true,
+              },
+              call_to_action_list: ctaList,
+            }
+
+            L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
+            var adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+            if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
+              await rndDelay(8000, 12000)
+              adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+            }
+            if (adResM.code !== 0) {
+              L(advId, '❌ ACO Ad: ' + adResM.message)
+              results.errors.push({ account: advId, step: 'ad', error: adResM.message })
+            } else {
+              L(advId, '✅ Smart Creative criado | camp=' + campaignId + ' ag=' + adgroupId)
+              results.ads++
+              results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, campaign_name: campPayload.campaign_name })
             }
           } else {
             // Library video mode (CUSTOMIZED_USER / TT_USER)
