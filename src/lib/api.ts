@@ -23,7 +23,11 @@ async function request(params: string, options: RequestInit = {}) {
     },
     ...options,
   })
-  if (!res.ok) throw new Error('API ' + res.status)
+  if (!res.ok) {
+    var detail = ''
+    try { var body = await res.json(); detail = body.error || body.message || '' } catch(e) {}
+    throw new Error('API ' + res.status + (detail ? ': ' + detail : ''))
+  }
   return res.json()
 }
 

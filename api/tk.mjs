@@ -673,7 +673,14 @@ export default async function handler(req, res) {
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
           L(advId, 'Campaign: ' + campPayload.campaign_name)
-          var campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+          var campRes
+          try {
+            campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+          } catch(e) {
+            L(advId, '❌ Campaign network error: ' + e.message)
+            results.errors.push({ account: advId, step: 'campaign', error: e.message })
+            continue
+          }
           if (campRes.code !== 0) {
             L(advId, '❌ Campaign: ' + campRes.message)
             results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
@@ -710,7 +717,14 @@ export default async function handler(req, res) {
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }
-          var agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          var agRes
+          try {
+            agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          } catch(e) {
+            L(advId, '❌ AdGroup network error: ' + e.message)
+            results.errors.push({ account: advId, step: 'adgroup', error: e.message })
+            continue
+          }
           if (agRes.code !== 0) {
             L(advId, '❌ AdGroup: ' + agRes.message)
             results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
@@ -740,12 +754,19 @@ export default async function handler(req, res) {
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
-              var adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
-              // Retry específico para concurrent requests
-              if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
-                L(advId, '⏳ Concurrent limit, retry...')
-                await rndDelay(1500, 2500)
+              var adRes
+              try {
                 adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+                // Retry específico para concurrent requests
+                if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
+                  L(advId, '⏳ Concurrent limit, retry...')
+                  await rndDelay(1500, 2500)
+                  adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+                }
+              } catch(e) {
+                L(advId, '❌ Ad network error: ' + e.message)
+                results.errors.push({ account: advId, step: 'ad', error: e.message })
+                continue
               }
               if (adRes.code !== 0) {
                 L(advId, '❌ Ad: ' + adRes.message)
@@ -856,7 +877,15 @@ export default async function handler(req, res) {
           if (isCBO) campPayload.budget = humanBudget
 
           L(advId, 'Campaign: ' + campPayload.campaign_name)
-          var campRes = await tt('/campaign/create/', token, 'POST', campPayload, accountProxy)
+          var campRes
+          try {
+            campRes = await tt('/campaign/create/', token, 'POST', campPayload, accountProxy)
+          } catch(e) {
+            L(advId, '❌ Campaign network error: ' + e.message)
+            results.errors.push({ account: advId, step: 'campaign', error: e.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
           if (campRes.code !== 0) {
             L(advId, '❌ Campaign: ' + campRes.message)
             results.errors.push({ account: advId, step: 'campaign', error: campRes.message })
@@ -923,7 +952,15 @@ export default async function handler(req, res) {
             agPayload.creative_material_mode = 'SMART_CREATIVE'
           }
 
-          var agRes = await tt('/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          var agRes
+          try {
+            agRes = await tt('/adgroup/create/', token, 'POST', agPayload, accountProxy)
+          } catch(e) {
+            L(advId, '❌ AdGroup network error: ' + e.message)
+            results.errors.push({ account: advId, step: 'adgroup', error: e.message })
+            await rndDelay(1500, 3000)
+            continue
+          }
           if (agRes.code !== 0) {
             L(advId, '❌ AdGroup: ' + agRes.message)
             results.errors.push({ account: advId, step: 'adgroup', error: agRes.message })
@@ -961,7 +998,12 @@ export default async function handler(req, res) {
               : [{ title: 'Shop now' }]
 
             // CTA Portfolio (same approach as Smart+ — raw enums not supported)
-            var ctaResult = await getOrCreateCTA(token, advId, accountProxy)
+            var ctaResult
+            try {
+              ctaResult = await getOrCreateCTA(token, advId, accountProxy)
+            } catch(e) {
+              ctaResult = { ok: false, error: e.message }
+            }
             if (!ctaResult.ok) {
               L(advId, '⚠️ CTA Portfolio: ' + ctaResult.error)
               results.errors.push({ account: advId, step: 'cta', error: ctaResult.error })
@@ -982,10 +1024,17 @@ export default async function handler(req, res) {
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
             await rndDelay(2000, 3000)
-            var adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
-            if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
-              await rndDelay(8000, 12000)
+            var adResM
+            try {
               adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+              if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
+                await rndDelay(8000, 12000)
+                adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+              }
+            } catch(e) {
+              L(advId, '❌ ACO Ad network error: ' + e.message)
+              results.errors.push({ account: advId, step: 'ad', error: e.message })
+              continue
             }
             if (adResM.code !== 0) {
               L(advId, '❌ ACO Ad: ' + adResM.message)
@@ -1015,10 +1064,17 @@ export default async function handler(req, res) {
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
               L(advId, 'Ad vídeo ' + (v+1) + '/' + videoIds.length + '...')
-              var adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
-              if (adResV.code !== 0 && adResV.message && adResV.message.includes('concurrent')) {
-                await rndDelay(8000, 12000)
+              var adResV
+              try {
                 adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
+                if (adResV.code !== 0 && adResV.message && adResV.message.includes('concurrent')) {
+                  await rndDelay(8000, 12000)
+                  adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
+                }
+              } catch(e) {
+                L(advId, '❌ Ad network error: ' + e.message)
+                results.errors.push({ account: advId, step: 'ad', error: e.message })
+                continue
               }
               if (adResV.code !== 0) {
                 L(advId, '❌ Ad: ' + adResV.message)
