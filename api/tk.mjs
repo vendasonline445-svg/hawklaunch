@@ -133,6 +133,7 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
   if (agent) opts.agent = agent
+  opts.signal = AbortSignal.timeout(15000)
   var r = await nodeFetch(TIKTOK_API + endpoint, opts)
   return r.json()
 }
