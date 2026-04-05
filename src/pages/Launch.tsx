@@ -13,10 +13,9 @@ export default function Launch() {
 
   return (
     <div className="animate-fade-in">
-      <div className="grid grid-cols-4 gap-3 mb-7">
+      <div className="grid grid-cols-3 gap-3 mb-7">
         {([
-          { type: 'smart-spark', icon: '🔥', title: 'Smart+ V2', badge: 'novo', cls: 'badge-new' },
-          { type: 'smart-catalog', icon: '⚡', title: 'Smart+ V1', badge: 'legado', cls: 'badge-popular' },
+          { type: 'smart-spark', icon: '🔥', title: 'Smart+', badge: 'upgraded', cls: 'badge-new' },
           { type: 'manual', icon: '🎯', title: 'Manual', badge: 'clássico', cls: 'badge-catalog' },
           { type: 'queue', icon: '📋', title: 'Nova Fila', badge: 'combo', cls: 'badge-new' },
         ] as const).map(c => (

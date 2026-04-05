@@ -524,7 +524,7 @@ export default async function handler(req, res) {
     if (action === 'videos') {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      return res.json(await tt('/file/video/ad/get/?advertiser_id=' + advId + '&page_size=50', token))
+      return res.json(await tt('/file/video/ad/search/?advertiser_id=' + advId + '&page_size=50', token))
     }
 
     if (action === 'campaign_get') {
@@ -707,10 +707,13 @@ export default async function handler(req, res) {
             billing_event: 'OCPM',
             pixel_id: pixelId,
             promotion_type: 'WEBSITE',
+            promotion_website_type: 'UNSET',
             landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
+            click_attribution_window: 'SEVEN_DAYS',
+            view_attribution_window: 'ONE_DAY',
           }
           if (baseCpa > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
@@ -748,7 +751,7 @@ export default async function handler(req, res) {
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
-                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
+                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id, deeplink_type: 'NORMAL' } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
@@ -904,11 +907,6 @@ export default async function handler(req, res) {
             : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
 
-          var targetingSpec = { location_ids: body.location_ids || ['3469034'] }
-          if (body.age_groups && body.age_groups.length > 0) targetingSpec.age = body.age_groups
-          if (body.gender && body.gender !== 'GENDER_UNLIMITED') targetingSpec.gender = [body.gender]
-          if (body.os && body.os.length > 0) targetingSpec.operating_systems = body.os
-
           var agPayload = {
             request_id: makeRequestId(),
             advertiser_id: advId,
@@ -918,14 +916,17 @@ export default async function handler(req, res) {
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             promotion_type: 'WEBSITE',
+            promotion_website_type: 'UNSET',
             landing_page_url: accountDomain,
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
             location_ids: body.location_ids || ['3469034'],
-            targeting_spec: targetingSpec,
             pacing: 'PACING_MODE_SMOOTH',
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
+          if (body.age_groups && body.age_groups.length > 0) agPayload.age_groups = body.age_groups
+          if (body.gender && body.gender !== 'GENDER_UNLIMITED') agPayload.gender = body.gender
+          if (body.os && body.os.length > 0) agPayload.operating_systems = body.os
 
           if (isCBO) {
             agPayload.budget_mode = 'BUDGET_MODE_INFINITE'
@@ -988,15 +989,16 @@ export default async function handler(req, res) {
                   tiktok_item_id: sd.item_id,
                   identity_id: sd.identity_id,
                   identity_type: 'AUTH_CODE',
-                }
+                },
+                material_operation_status: 'ENABLE'
               })
             }
             if (mediaInfoList.length === 0) { L(advId, '⚠️ Nenhum Spark autorizado'); continue }
 
             // Build title_list (max 5)
             var titleList = (body.ad_texts && body.ad_texts.length > 0)
-              ? body.ad_texts.slice(0, 5).map(function(t) { return { title: t } })
-              : [{ title: 'Shop now' }]
+              ? body.ad_texts.slice(0, 5).map(function(t) { return { title: t, material_operation_status: 'ENABLE' } })
+              : [{ title: 'Shop now', material_operation_status: 'ENABLE' }]
 
             // CTA Portfolio (same approach as Smart+ — raw enums not supported)
             var ctaResult
@@ -1061,6 +1063,7 @@ export default async function handler(req, res) {
                 call_to_action: body.call_to_action || 'SHOP_NOW',
                 landing_page_url: accountDomain,
                 display_name: body.display_name || '',
+                deeplink_type: 'NORMAL',
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
@@ -1185,7 +1188,7 @@ export default async function handler(req, res) {
 
     if (action === 'regions') {
       var advId = req.query.advertiser_id
-      return res.json(await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=CONVERSIONS', token))
+      return res.json(await tt('/tool/region/?advertiser_id=' + advId + '&placements=["PLACEMENT_TIKTOK"]&objective_type=WEB_CONVERSIONS', token))
     }
 
     res.status(400).json({ error: 'Unknown action', action: action })
