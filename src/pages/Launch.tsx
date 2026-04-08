@@ -9,9 +9,21 @@ const STEPS_QUEUE = ['Fila', 'Contas', 'Smart+', 'Manual', 'Proxy', 'Lançar']
 const COUNTRY_LOCATIONS: Record<string, string> = {
   BR: '3469034', US: '6252001', MX: '3996063', AR: '3865483', CO: '3686110',
 }
+const COUNTRY_TIMEZONES: Record<string, string> = {
+  BR: 'America/Sao_Paulo', US: 'America/New_York', MX: 'America/Mexico_City',
+  AR: 'America/Argentina/Buenos_Aires', CO: 'America/Bogota',
+}
+function getTargetCountry(): string {
+  return localStorage.getItem('hawklaunch_target_country') || 'BR'
+}
 function getLocationIds(): string[] {
-  const c = localStorage.getItem('hawklaunch_target_country') || 'BR'
-  return [COUNTRY_LOCATIONS[c] || COUNTRY_LOCATIONS.BR]
+  return [COUNTRY_LOCATIONS[getTargetCountry()] || COUNTRY_LOCATIONS.BR]
+}
+function getTargetTimezone(): string {
+  return COUNTRY_TIMEZONES[getTargetCountry()] || COUNTRY_TIMEZONES.BR
+}
+function formatInTimezone(date: Date): string {
+  return date.toLocaleString('sv-SE', { timeZone: getTargetTimezone() }).replace(',', '')
 }
 
 export default function Launch() {
@@ -844,16 +856,17 @@ function StepLaunch() {
     logs.filter(l => l.cat === 'DEBUG')
 
   function buildScheduleStart() {
+    const tz = getTargetTimezone()
+    const country = getTargetCountry()
     if (schedule === 'custom' && customSchedule) {
-      const utcDate = new Date(customSchedule)
-      const s = utcDate.toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' local → ' + s + ' UTC')
+      const s = formatInTimezone(new Date(customSchedule))
+      addLog('INFO', '🕐 Início agendado: ' + customSchedule + ' → ' + s + ' (' + country + '/' + tz + ')')
       return s
     }
     if (schedule !== 'now') {
       const mins = schedule === '1h' ? 60 : schedule === '3h' ? 180 : schedule === '6h' ? 360 : schedule === '12h' ? 720 : 60
-      const s = new Date(Date.now() + mins * 60000).toISOString().replace('T', ' ').substring(0, 19)
-      addLog('INFO', '🕐 Início agendado: +' + schedule + ' → ' + s + ' UTC')
+      const s = formatInTimezone(new Date(Date.now() + mins * 60000))
+      addLog('INFO', '🕐 Início agendado: +' + schedule + ' → ' + s + ' (' + country + '/' + tz + ')')
       return s
     }
     return undefined
@@ -921,7 +934,7 @@ function StepLaunch() {
         pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: getLocationIds(),
-        schedule_start: scheduleStart,
+        schedule_start: scheduleStart, timezone: getTargetTimezone(),
       }
 
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
@@ -1048,7 +1061,7 @@ function StepLaunch() {
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         start_paused: startPaused,
         location_ids: getLocationIds(),
-        schedule_start: scheduleStart,
+        schedule_start: scheduleStart, timezone: getTargetTimezone(),
         age_groups: autoTarget ? [] : ageGroups,
         gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
         os: autoTarget ? [] : osTarget,
@@ -1154,7 +1167,7 @@ function StepLaunch() {
       budget: smartBudget, target_cpa: targetCpa || undefined,
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
-      location_ids: getLocationIds(), schedule_start: scheduleStart,
+      location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
     }
 
     const manualPayload = {
@@ -1166,7 +1179,7 @@ function StepLaunch() {
       call_to_action: callToAction, landing_page_url: destUrl, domain_list: domainList, ad_texts: adTexts,
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
-      start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart,
+      start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
     }
 

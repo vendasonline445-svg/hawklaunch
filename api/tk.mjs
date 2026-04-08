@@ -692,9 +692,10 @@ export default async function handler(req, res) {
           results.campaigns++
           await rndDelay(400, 700)
 
+          var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
             ? body.schedule_start
-            : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+            : new Date(Date.now() + 10*60000).toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
           var baseCpa = parseFloat(body.target_cpa) || 0
           var agPayload = {
@@ -902,9 +903,10 @@ export default async function handler(req, res) {
           await rndDelay(1500, 3000)
 
           // Ad Group
+          var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
             ? body.schedule_start
-            : new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
+            : new Date(Date.now() + 10*60000).toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
 
           var agPayload = {
