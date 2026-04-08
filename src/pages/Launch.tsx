@@ -6,6 +6,14 @@ import { useAccounts } from '@/hooks/useAccounts'
 const STEPS_DEFAULT = ['Contas', 'Identity', 'Criativos', 'Estrutura', 'Targeting', 'Proxy', 'Lançar']
 const STEPS_QUEUE = ['Fila', 'Contas', 'Smart+', 'Manual', 'Proxy', 'Lançar']
 
+const COUNTRY_LOCATIONS: Record<string, string> = {
+  BR: '3469034', US: '6252001', MX: '3996063', AR: '3865483', CO: '3686110',
+}
+function getLocationIds(): string[] {
+  const c = localStorage.getItem('hawklaunch_target_country') || 'BR'
+  return [COUNTRY_LOCATIONS[c] || COUNTRY_LOCATIONS.BR]
+}
+
 export default function Launch() {
   const { currentStep, setStep, campaignType, setCampaignType } = useAppStore()
   const isQueue = campaignType === 'queue'
@@ -719,10 +727,11 @@ function StepStructure() {
 }
 function StepTargeting() {
   const [auto, setAuto] = useState(true)
+  const [country, setCountry] = useState(() => localStorage.getItem('hawklaunch_target_country') || 'BR')
   return <div className="card animate-fade-in"><h2 className="text-lg font-bold mb-5">🎯 Targeting</h2>
     <ToggleRow title="Auto Targeting" desc="IA do TikTok" defaultOn onChange={setAuto}/>
     <div className={auto?'opacity-40 pointer-events-none mt-4':'mt-4'}><div className="flex flex-wrap gap-2 mb-4">{['18–24','25–34','35–44','45–54','55+'].map(a=><div key={a} className="chip active">{a}</div>)}</div>
-    <div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">País</label><select className="select"><option>🇧🇷 Brasil</option></select></div><div><label className="label mb-1.5 block">Idioma</label><select className="select"><option>Português</option></select></div></div></div>
+    <div className="grid grid-cols-2 gap-4"><div><label className="label mb-1.5 block">País</label><select className="select" value={country} onChange={e => { setCountry(e.target.value); localStorage.setItem('hawklaunch_target_country', e.target.value) }}><option value="BR">🇧🇷 Brasil</option><option value="US">🇺🇸 Estados Unidos</option><option value="MX">🇲🇽 México</option><option value="AR">🇦🇷 Argentina</option><option value="CO">🇨🇴 Colômbia</option></select></div><div><label className="label mb-1.5 block">Idioma</label><select className="select"><option>Português</option><option>English</option><option>Espanhol</option></select></div></div></div>
     <StepFooter prev={3} next={5}/></div>
 }
 function StepProxy({ prevStep = 4, nextStep = 6 }: { prevStep?: number; nextStep?: number }) {
@@ -911,7 +920,7 @@ function StepLaunch() {
         target_cpa: targetCpa || undefined,
         pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
-        location_ids: ['3469034'],
+        location_ids: getLocationIds(),
         schedule_start: scheduleStart,
       }
 
@@ -1038,7 +1047,7 @@ function StepLaunch() {
         pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         start_paused: startPaused,
-        location_ids: ['3469034'],
+        location_ids: getLocationIds(),
         schedule_start: scheduleStart,
         age_groups: autoTarget ? [] : ageGroups,
         gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
@@ -1145,7 +1154,7 @@ function StepLaunch() {
       budget: smartBudget, target_cpa: targetCpa || undefined,
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
-      location_ids: ['3469034'], schedule_start: scheduleStart,
+      location_ids: getLocationIds(), schedule_start: scheduleStart,
     }
 
     const manualPayload = {
@@ -1157,7 +1166,7 @@ function StepLaunch() {
       call_to_action: callToAction, landing_page_url: destUrl, domain_list: domainList, ad_texts: adTexts,
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
-      start_paused: startPaused, location_ids: ['3469034'], schedule_start: scheduleStart,
+      start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart,
       age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
     }
 
@@ -1924,7 +1933,7 @@ function ManualStepTargeting() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label mb-1.5 block">País</label>
-            <select className="select" defaultValue="BR" onChange={e => localStorage.setItem('hawklaunch_manual_country', e.target.value)}>
+            <select className="select" defaultValue={localStorage.getItem('hawklaunch_target_country') || 'BR'} onChange={e => localStorage.setItem('hawklaunch_target_country', e.target.value)}>
               <option value="BR">🇧🇷 Brasil</option>
               <option value="US">🇺🇸 Estados Unidos</option>
               <option value="MX">🇲🇽 México</option>
