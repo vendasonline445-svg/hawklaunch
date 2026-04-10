@@ -224,7 +224,7 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
   return { ok: false, error: lastError + ' (3 tentativas)' }
 }
 
-var WANTED_CTAS = ['buy it now','learn more','shop now','check it out','get yours now','shop today','order today','shop','order yours today','visit store']
+var WANTED_CTAS = ['visit store','shop now','learn more','sign up','view now','read more','check it out','apply now','book now','order now','watch now','download','contact us','play game','get quote','install now','get showtimes','listen now','interested','subscribe','get tickets now','experience now','pre-order now','donate now','buy it now','get yours now','shop today','order today','shop','order yours today']
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw) {
   var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&new_version=true&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&language=en', token, 'GET', null, proxyRaw)

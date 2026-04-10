@@ -1650,11 +1650,14 @@ function ManualStepCreative() {
   }
 
   const CTA_OPTIONS = [
-    { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' }, { v: 'ORDER_NOW', l: 'Order now' },
-    { v: 'BUY_NOW', l: 'Buy now' }, { v: 'SIGN_UP', l: 'Sign up' }, { v: 'CONTACT_US', l: 'Contact us' },
-    { v: 'GET_NOW', l: 'Get it now' }, { v: 'GET_YOURS', l: 'Get yours' }, { v: 'VIEW_NOW', l: 'View now' },
-    { v: 'DOWNLOAD', l: 'Download' }, { v: 'APPLY_NOW', l: 'Apply now' }, { v: 'BOOK_NOW', l: 'Book now' },
-    { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'WATCH_NOW', l: 'Watch now' }, { v: 'SUBSCRIBE', l: 'Subscribe' },
+    { v: 'VISIT_STORE', l: 'Visit store' }, { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' },
+    { v: 'SIGN_UP', l: 'Sign up' }, { v: 'VIEW_NOW', l: 'View now' }, { v: 'READ_MORE', l: 'Read more' },
+    { v: 'CHECK_IT_OUT', l: 'Check it out' }, { v: 'APPLY_NOW', l: 'Apply now' }, { v: 'BOOK_NOW', l: 'Book now' },
+    { v: 'ORDER_NOW', l: 'Order now' }, { v: 'WATCH_NOW', l: 'Watch now' }, { v: 'DOWNLOAD', l: 'Download' },
+    { v: 'CONTACT_US', l: 'Contact us' }, { v: 'PLAY_GAME', l: 'Play game' }, { v: 'GET_QUOTE', l: 'Get quote' },
+    { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'GET_SHOWTIMES', l: 'Get showtimes' }, { v: 'LISTEN_NOW', l: 'Listen now' },
+    { v: 'INTERESTED', l: 'Interested' }, { v: 'SUBSCRIBE', l: 'Subscribe' }, { v: 'GET_TICKETS_NOW', l: 'Get tickets now' },
+    { v: 'EXPERIENCE_NOW', l: 'Experience now' }, { v: 'PRE_ORDER_NOW', l: 'Pre-order now' }, { v: 'DONATE_NOW', l: 'Donate now' },
   ]
 
   return (
@@ -2233,9 +2236,14 @@ function QueueManualConfig() {
   })
 
   const CTA_OPTIONS = [
-    { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' }, { v: 'ORDER_NOW', l: 'Order now' },
-    { v: 'BUY_NOW', l: 'Buy now' }, { v: 'SIGN_UP', l: 'Sign up' }, { v: 'CONTACT_US', l: 'Contact us' },
-    { v: 'GET_NOW', l: 'Get it now' }, { v: 'GET_YOURS', l: 'Get yours' }, { v: 'VIEW_NOW', l: 'View now' },
+    { v: 'VISIT_STORE', l: 'Visit store' }, { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'LEARN_MORE', l: 'Learn more' },
+    { v: 'SIGN_UP', l: 'Sign up' }, { v: 'VIEW_NOW', l: 'View now' }, { v: 'READ_MORE', l: 'Read more' },
+    { v: 'CHECK_IT_OUT', l: 'Check it out' }, { v: 'APPLY_NOW', l: 'Apply now' }, { v: 'BOOK_NOW', l: 'Book now' },
+    { v: 'ORDER_NOW', l: 'Order now' }, { v: 'WATCH_NOW', l: 'Watch now' }, { v: 'DOWNLOAD', l: 'Download' },
+    { v: 'CONTACT_US', l: 'Contact us' }, { v: 'PLAY_GAME', l: 'Play game' }, { v: 'GET_QUOTE', l: 'Get quote' },
+    { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'GET_SHOWTIMES', l: 'Get showtimes' }, { v: 'LISTEN_NOW', l: 'Listen now' },
+    { v: 'INTERESTED', l: 'Interested' }, { v: 'SUBSCRIBE', l: 'Subscribe' }, { v: 'GET_TICKETS_NOW', l: 'Get tickets now' },
+    { v: 'EXPERIENCE_NOW', l: 'Experience now' }, { v: 'PRE_ORDER_NOW', l: 'Pre-order now' }, { v: 'DONATE_NOW', l: 'Donate now' },
   ]
   const OBJECTIVES = [
     { v: 'CONVERSIONS', l: '💰 Conversões' }, { v: 'TRAFFIC', l: '🖱️ Tráfego' },
