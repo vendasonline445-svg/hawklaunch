@@ -172,16 +172,25 @@ export default function Dashboard() {
       if (disableAbort.current) break
       const a = toDisable[i]
       const proxy = proxyList.length > 0 ? proxyList[i % proxyList.length] : undefined
-      try {
-        const r = await api.disableCampaigns(a.advertiser_id, proxy) as any
-        if (r.code === 0) {
-          const d = r.data
-          setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: d.disabled || 0, total: d.total || 0, ok: true }])
-        } else {
-          setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: r.message || 'Erro' }])
+      let disableOk = false
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const r = await api.disableCampaigns(a.advertiser_id, proxy) as any
+          if (r.code === 0) {
+            const d = r.data
+            setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: d.disabled || 0, total: d.total || 0, ok: true }])
+          } else {
+            setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: r.message || 'Erro' }])
+          }
+          disableOk = true; break
+        } catch(e: any) {
+          if (attempt < 2) {
+            setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: e.message + ' (retry ' + (attempt+2) + '/3...)' }])
+            await new Promise(r => setTimeout(r, 8000 + attempt * 8000 + Math.random() * 4000))
+          } else {
+            setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: e.message + ' (3 tentativas)' }])
+          }
         }
-      } catch(e: any) {
-        setDisableLogs(prev => [...prev, { id: a.advertiser_id, name: a.advertiser_name || a.advertiser_id, disabled: 0, total: 0, ok: false, error: e.message }])
       }
       setDisableProgress(Math.round(((i + 1) / toDisable.length) * 100))
     }

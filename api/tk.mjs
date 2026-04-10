@@ -294,26 +294,29 @@ export default async function handler(req, res) {
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = (body && body.proxy) || null
 
-      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
-      if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, disabled: 0 })
-      var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
-      if (camps.length === 0) return res.json({ code: 0, data: { disabled: 0, total: 0 } })
+      try {
+        var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
+        if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, disabled: 0 })
+        var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
+        if (camps.length === 0) return res.json({ code: 0, data: { disabled: 0, total: 0 } })
 
-      // Desativa todas de uma vez — operação DISABLE é segura em bulk
-      var activeIds = camps
-        .filter(function(c) { return c.operation_status !== 'DISABLE' && c.operation_status !== 'DELETE' })
-        .map(function(c) { return c.campaign_id })
+        var activeIds = camps
+          .filter(function(c) { return c.operation_status !== 'DISABLE' && c.operation_status !== 'DELETE' })
+          .map(function(c) { return c.campaign_id })
 
-      if (activeIds.length === 0) return res.json({ code: 0, data: { disabled: 0, total: camps.length, already_off: camps.length } })
+        if (activeIds.length === 0) return res.json({ code: 0, data: { disabled: 0, total: camps.length, already_off: camps.length } })
 
-      var disRes = await tt('/campaign/status/update/', token, 'POST', {
-        advertiser_id: advId,
-        campaign_ids: activeIds,
-        operation_status: 'DISABLE'
-      }, proxyRaw)
+        var disRes = await tt('/campaign/status/update/', token, 'POST', {
+          advertiser_id: advId,
+          campaign_ids: activeIds,
+          operation_status: 'DISABLE'
+        }, proxyRaw)
 
-      if (disRes.code === 0) return res.json({ code: 0, data: { disabled: activeIds.length, total: camps.length } })
-      return res.json({ code: disRes.code, message: disRes.message, data: { disabled: 0, total: camps.length } })
+        if (disRes.code === 0) return res.json({ code: 0, data: { disabled: activeIds.length, total: camps.length } })
+        return res.json({ code: disRes.code, message: disRes.message, data: { disabled: 0, total: camps.length } })
+      } catch(e) {
+        return res.json({ code: -1, message: e.message })
+      }
     }
 
     if (action === 'delete_campaigns' && req.method === 'POST') {
@@ -321,36 +324,36 @@ export default async function handler(req, res) {
       var advId = body && body.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
 
-      // Usa proxy específico desta conta para não correlacionar com outras
       var proxyRaw = (body && body.proxy) || null
 
-      // Busca campanhas — uma página, 100 por vez
-      var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
-      if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, deleted: 0 })
-      var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
-      if (camps.length === 0) return res.json({ code: 0, data: { deleted: 0, total: 0 } })
+      try {
+        var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
+        if (campRes.code !== 0) return res.json({ code: campRes.code, message: campRes.message, deleted: 0 })
+        var camps = (campRes.data && campRes.data.list) ? campRes.data.list : []
+        if (camps.length === 0) return res.json({ code: 0, data: { deleted: 0, total: 0 } })
 
-      var deleted = 0; var errors = []
+        var deleted = 0; var errors = []
 
-      // Deleta UMA campanha por vez com delay humano — nunca em bulk
-      for (var i = 0; i < camps.length; i++) {
-        var campId = camps[i].campaign_id
-        // Delay humano entre cada delete: 3-8 segundos
-        if (i > 0) await rndDelay(3000, 8000)
-        try {
-          var delRes = await tt('/campaign/status/update/', token, 'POST', {
-            advertiser_id: advId,
-            campaign_ids: [campId],
-            operation_status: 'DELETE'
-          }, proxyRaw)
-          if (delRes.code === 0) deleted++
-          else errors.push(campId + ': ' + (delRes.message || 'unknown'))
-        } catch(e) {
-          errors.push(campId + ': ' + e.message)
+        for (var i = 0; i < camps.length; i++) {
+          var campId = camps[i].campaign_id
+          if (i > 0) await rndDelay(3000, 8000)
+          try {
+            var delRes = await tt('/campaign/status/update/', token, 'POST', {
+              advertiser_id: advId,
+              campaign_ids: [campId],
+              operation_status: 'DELETE'
+            }, proxyRaw)
+            if (delRes.code === 0) deleted++
+            else errors.push(campId + ': ' + (delRes.message || 'unknown'))
+          } catch(e) {
+            errors.push(campId + ': ' + e.message)
+          }
         }
-      }
 
-      return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
+        return res.json({ code: 0, data: { deleted, total: camps.length, errors } })
+      } catch(e) {
+        return res.json({ code: -1, message: e.message })
+      }
     }
 
     if (action === 'ad_list_review') {
