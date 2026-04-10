@@ -206,21 +206,30 @@ function StepAccounts({ nextStep = 1 }: { nextStep?: number }) {
       addPauseLog('━━━ (' + (i+1) + '/' + targets.length + ') ' + accName)
       if (proxy) addPauseLog('🛡️ Proxy: ' + proxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
 
-      try {
-        const r = await api.disableCampaigns(advId, proxy)
-        if ((r as any).code === 0) {
-          const d = (r as any).data
-          if (d.disabled > 0) addPauseLog('✅ ' + d.disabled + '/' + d.total + ' campanha(s) pausada(s)')
-          else if (d.already_off) addPauseLog('⚠️ ' + d.already_off + ' campanha(s) já pausadas')
-          else addPauseLog('✅ Nenhuma campanha ativa')
-        } else {
-          addPauseLog('❌ ' + ((r as any).message || 'Erro'))
-          errors++
+      let disableOk = false
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const r = await api.disableCampaigns(advId, proxy)
+          if ((r as any).code === 0) {
+            const d = (r as any).data
+            if (d.disabled > 0) addPauseLog('✅ ' + d.disabled + '/' + d.total + ' campanha(s) pausada(s)')
+            else if (d.already_off) addPauseLog('⚠️ ' + d.already_off + ' campanha(s) já pausadas')
+            else addPauseLog('✅ Nenhuma campanha ativa')
+          } else {
+            addPauseLog('❌ ' + ((r as any).message || 'Erro'))
+            errors++
+          }
+          disableOk = true; break
+        } catch(e: any) {
+          addPauseLog('❌ ' + e.message)
+          if (attempt < 2) {
+            const retryWait = 8000 + attempt * 8000
+            addPauseLog('🔄 Retry ' + (attempt+2) + '/3 em ' + Math.round(retryWait/1000) + 's...')
+            await new Promise(r => setTimeout(r, retryWait + Math.random() * 4000))
+          }
         }
-      } catch(e: any) {
-        addPauseLog('❌ ' + e.message)
-        errors++
       }
+      if (!disableOk) { addPauseLog('❌ Falhou após 3 tentativas'); errors++ }
 
       setPauseProgress({ done: i + 1, total: targets.length, errors })
 
@@ -951,30 +960,38 @@ function StepLaunch() {
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
           const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
-          try {
-            const r = await api.launchSmart(singlePayload)
-            if (r.code === 0 && r.data) {
-              const d = r.data as any
-              totalResult.campaigns += d.campaigns || 0
-              totalResult.adgroups += d.adgroups || 0
-              totalResult.ads += d.ads || 0
-              if (d.cta_cache) {
-                const merged = { ...ctaCacheSaved, ...d.cta_cache }
-                localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(merged))
-                Object.assign(ctaCacheSaved, d.cta_cache)
-              }
-              if (d.logs) d.logs.forEach((l: any) => {
-                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
-                addLog(cat, l.message)
-              })
-              if (d.errors) {
-                allErrors.push(...d.errors)
-                if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
-                  accountNoPermission = true
+          let retryOk = false
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const r = await api.launchSmart(singlePayload)
+              if (r.code === 0 && r.data) {
+                const d = r.data as any
+                totalResult.campaigns += d.campaigns || 0
+                totalResult.adgroups += d.adgroups || 0
+                totalResult.ads += d.ads || 0
+                if (d.cta_cache) {
+                  const merged = { ...ctaCacheSaved, ...d.cta_cache }
+                  localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(merged))
+                  Object.assign(ctaCacheSaved, d.cta_cache)
                 }
-              }
-            } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
-          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+                if (d.logs) d.logs.forEach((l: any) => {
+                  const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
+                  addLog(cat, l.message)
+                })
+                if (d.errors) {
+                  allErrors.push(...d.errors)
+                  if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
+                    accountNoPermission = true
+                  }
+                }
+              } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
+              retryOk = true; break
+            } catch(e: any) {
+              addLog('ERROR', 'Fatal: ' + e.message)
+              if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
+            }
+          }
+          if (!retryOk) addLog('ERROR', '❌ Campanha ' + (cp+1) + ' falhou após 3 tentativas')
         }
       }
     } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
@@ -1202,16 +1219,24 @@ function StepLaunch() {
             setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
 
             const singlePayload = { ...smartPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
-            try {
-              const r = await api.launchSmart(singlePayload)
-              if (r.code === 0 && r.data) {
-                const d = r.data as any
-                totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
-                if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
-                if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
-                if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
-              } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
-            } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+            let retryOk = false
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const r = await api.launchSmart(singlePayload)
+                if (r.code === 0 && r.data) {
+                  const d = r.data as any
+                  totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
+                  if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
+                  if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
+                  if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
+                } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+                retryOk = true; break
+              } catch(e: any) {
+                addLog('ERROR', 'Fatal: ' + e.message)
+                if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
+              }
+            }
+            if (!retryOk) addLog('ERROR', '❌ Campanha Smart+ ' + seqCounter + ' falhou após 3 tentativas')
             seqCounter++
           }
         }
@@ -1225,15 +1250,23 @@ function StepLaunch() {
             setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
 
             const singlePayload = { ...manualPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
-            try {
-              const r = await api.launchManual(singlePayload)
-              if (r.code === 0 && r.data) {
-                const d = r.data as any
-                totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
-                if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
-                if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
-              } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
-            } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+            let retryOk = false
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const r = await api.launchManual(singlePayload)
+                if (r.code === 0 && r.data) {
+                  const d = r.data as any
+                  totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
+                  if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
+                  if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
+                } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+                retryOk = true; break
+              } catch(e: any) {
+                addLog('ERROR', 'Fatal: ' + e.message)
+                if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
+              }
+            }
+            if (!retryOk) addLog('ERROR', '❌ Campanha Manual ' + seqCounter + ' falhou após 3 tentativas')
             seqCounter++
           }
         }

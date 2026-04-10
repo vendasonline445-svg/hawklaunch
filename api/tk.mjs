@@ -51,6 +51,26 @@ function humanizeValue(base, pct) {
   return Math.round(raw / 5) * 5
 }
 
+// Conversão de BRL para moeda da conta — taxas aproximadas
+// O usuário sempre insere budget em BRL; a API TikTok espera na moeda da conta
+var BRL_TO_CURRENCY = {
+  BRL: 1,
+  USD: 0.18,
+  CLP: 160,
+  MXN: 3.5,
+  ARS: 200,
+  COP: 750,
+  EUR: 0.16,
+}
+
+function convertBudget(brlValue, currency) {
+  var rate = BRL_TO_CURRENCY[currency]
+  if (!rate) return brlValue // moeda desconhecida — envia como está
+  var converted = Math.round(brlValue * rate)
+  // Arredonda para múltiplo de 5 na moeda destino
+  return Math.round(converted / 5) * 5
+}
+
 function jitterSchedule(scheduleStr, minMinutes, maxMinutes) {
   try {
     var base = scheduleStr || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
@@ -645,6 +665,7 @@ export default async function handler(req, res) {
 
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
+        var accountCurrency = body.accounts[i].currency || 'BRL'
         // Pula conta sem permissão
         if (noPermission) { noPermission = false; continue }
         var accountSparks = sparkAuthCache[advId] || {}
@@ -662,7 +683,9 @@ export default async function handler(req, res) {
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
           var baseBudget = body.budget || 111
-          var humanBudget = humanizeValue(baseBudget, 10)
+          var convertedBudget = convertBudget(baseBudget, accountCurrency)
+          var humanBudget = humanizeValue(convertedBudget, 10)
+          if (accountCurrency !== 'BRL') L(advId, '💱 Budget: R$' + baseBudget + ' → ' + accountCurrency + ' ' + humanBudget)
           var campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
@@ -674,12 +697,18 @@ export default async function handler(req, res) {
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
           L(advId, 'Campaign: ' + campPayload.campaign_name)
-          var campRes
-          try {
-            campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
-          } catch(e) {
-            L(advId, '❌ Campaign network error: ' + e.message)
-            results.errors.push({ account: advId, step: 'campaign', error: e.message })
+          var campRes, campOk = false
+          for (var campAttempt = 0; campAttempt < 3; campAttempt++) {
+            try {
+              campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+              campOk = true; break
+            } catch(e) {
+              L(advId, '❌ Campaign network error: ' + e.message)
+              if (campAttempt < 2) { L(advId, '🔄 Campaign retry ' + (campAttempt+2) + '/3...'); await rndDelay(5000 + campAttempt*5000, 10000 + campAttempt*5000) }
+            }
+          }
+          if (!campOk) {
+            results.errors.push({ account: advId, step: 'campaign', error: 'network error after 3 retries' })
             continue
           }
           if (campRes.code !== 0) {
@@ -698,6 +727,7 @@ export default async function handler(req, res) {
             : new Date(Date.now() + 10*60000).toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
           var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
           var baseCpa = parseFloat(body.target_cpa) || 0
+          if (baseCpa > 0) baseCpa = convertBudget(baseCpa, accountCurrency)
           var agPayload = {
             request_id: makeRequestId(),
             advertiser_id: advId,
@@ -722,12 +752,18 @@ export default async function handler(req, res) {
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }
-          var agRes
-          try {
-            agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
-          } catch(e) {
-            L(advId, '❌ AdGroup network error: ' + e.message)
-            results.errors.push({ account: advId, step: 'adgroup', error: e.message })
+          var agRes, agOk = false
+          for (var agAttempt = 0; agAttempt < 3; agAttempt++) {
+            try {
+              agRes = await tt('/smart_plus/adgroup/create/', token, 'POST', agPayload, accountProxy)
+              agOk = true; break
+            } catch(e) {
+              L(advId, '❌ AdGroup network error: ' + e.message)
+              if (agAttempt < 2) { L(advId, '🔄 AdGroup retry ' + (agAttempt+2) + '/3...'); await rndDelay(5000 + agAttempt*5000, 10000 + agAttempt*5000) }
+            }
+          }
+          if (!agOk) {
+            results.errors.push({ account: advId, step: 'adgroup', error: 'network error after 3 retries' })
             continue
           }
           if (agRes.code !== 0) {
@@ -759,18 +795,23 @@ export default async function handler(req, res) {
               if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
-              var adRes
-              try {
-                adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
-                // Retry específico para concurrent requests
-                if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
-                  L(advId, '⏳ Concurrent limit, retry...')
-                  await rndDelay(1500, 2500)
+              var adRes, adOk = false
+              for (var adAttempt = 0; adAttempt < 3; adAttempt++) {
+                try {
                   adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+                  if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
+                    L(advId, '⏳ Concurrent limit, retry...')
+                    await rndDelay(1500, 2500)
+                    adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+                  }
+                  adOk = true; break
+                } catch(e) {
+                  L(advId, '❌ Ad network error: ' + e.message)
+                  if (adAttempt < 2) { L(advId, '🔄 Ad retry ' + (adAttempt+2) + '/3...'); await rndDelay(3000 + adAttempt*3000, 6000 + adAttempt*3000) }
                 }
-              } catch(e) {
-                L(advId, '❌ Ad network error: ' + e.message)
-                results.errors.push({ account: advId, step: 'ad', error: e.message })
+              }
+              if (!adOk) {
+                results.errors.push({ account: advId, step: 'ad', error: 'network error after 3 retries' })
                 continue
               }
               if (adRes.code !== 0) {
@@ -817,6 +858,7 @@ export default async function handler(req, res) {
 
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
+        var accountCurrency = body.accounts[i].currency || 'BRL'
         var sparkAuthCache = {}
 
         // Spark authorization (AUTH_CODE identity only)
@@ -864,7 +906,9 @@ export default async function handler(req, res) {
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
           var isCBO = body.budget_mode !== 'abo'
-          var humanBudget = humanizeValue(body.budget || 50, 10)
+          var convertedBudget = convertBudget(body.budget || 50, accountCurrency)
+          var humanBudget = humanizeValue(convertedBudget, 10)
+          if (cp === 0 && accountCurrency !== 'BRL') L(advId, '💱 Budget: R$' + (body.budget || 50) + ' → ' + accountCurrency + ' ' + humanBudget)
 
           // Campaign — Smart Creative (ACO) requires WEB_CONVERSIONS, not CONVERSIONS
           var effectiveObjective = body.objective_type || 'WEB_CONVERSIONS'
@@ -946,7 +990,7 @@ export default async function handler(req, res) {
 
           if (!isCBO && body.bid_price && parseFloat(body.bid_price) > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
-            agPayload.conversion_bid_price = parseFloat(body.bid_price)
+            agPayload.conversion_bid_price = convertBudget(parseFloat(body.bid_price), accountCurrency)
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }
