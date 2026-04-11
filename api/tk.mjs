@@ -325,24 +325,17 @@ export default async function handler(req, res) {
       var ext = fileName.split('.').pop().toLowerCase()
       var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
       var mime = mimeMap[ext] || 'image/jpeg'
-      var boundary = '----HawkBoundary' + Date.now() + Math.random().toString(36).substring(2, 8)
-      var parts = []
-      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="advertiser_id"\r\n\r\n' + advId + '\r\n')
-      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="upload_type"\r\n\r\nUPLOAD_BY_FILE\r\n')
-      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="image_file"; filename="' + fileName + '"\r\nContent-Type: ' + mime + '\r\n\r\n')
-      var bodyBuf = Buffer.concat([
-        Buffer.from(parts.join('')),
-        imgBuf,
-        Buffer.from('\r\n--' + boundary + '--\r\n')
-      ])
+      var formData = new FormData()
+      formData.append('advertiser_id', advId)
+      formData.append('upload_type', 'UPLOAD_BY_FILE')
+      formData.append('image_file', new Blob([imgBuf], { type: mime }), fileName)
       try {
         var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
           method: 'POST',
           headers: {
             'Access-Token': token,
-            'Content-Type': 'multipart/form-data; boundary=' + boundary,
           },
-          body: bodyBuf,
+          body: formData,
         })
         var uploadData = await uploadRes.json()
         if (uploadData.code !== 0 || !uploadData.data) return res.json({ code: uploadData.code || -1, error: uploadData.message || 'Upload failed', data: null })
