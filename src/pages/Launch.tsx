@@ -1046,10 +1046,10 @@ function StepLaunch() {
     let allErrors: any[] = []
 
     const billingByObjective: Record<string, string> = {
-      CONVERSIONS: 'OCPM', TRAFFIC: 'OCPM', REACH: 'CPM', VIDEO_VIEWS: 'OCPM',
+      CONVERSIONS: 'OCPM', TRAFFIC: 'CPC', REACH: 'CPM', VIDEO_VIEWS: 'CPV', ENGAGEMENT: 'OCPM',
     }
     const goalByObjective: Record<string, string> = {
-      CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'VIDEO_PLAY',
+      CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'ENGAGED_VIEW', ENGAGEMENT: 'FOLLOWERS',
     }
 
     try {
@@ -1174,8 +1174,8 @@ function StepLaunch() {
     let allErrors: any[] = []
     const totalCampsPerAccount = smartCount + manualCount
 
-    const billingByObjective: Record<string, string> = { CONVERSIONS: 'OCPM', TRAFFIC: 'OCPM', REACH: 'CPM', VIDEO_VIEWS: 'OCPM' }
-    const goalByObjective: Record<string, string> = { CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'VIDEO_PLAY' }
+    const billingByObjective: Record<string, string> = { CONVERSIONS: 'OCPM', TRAFFIC: 'CPC', REACH: 'CPM', VIDEO_VIEWS: 'CPV', ENGAGEMENT: 'OCPM' }
+    const goalByObjective: Record<string, string> = { CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'ENGAGED_VIEW', ENGAGEMENT: 'FOLLOWERS' }
 
     const smartPayload = {
       accounts: selectedAccounts, campaign_name: smartName, adgroup_name: 'AG ' + smartName, ad_name: smartName,
@@ -1658,6 +1658,7 @@ function ManualStepCreative() {
     { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'GET_SHOWTIMES', l: 'Get showtimes' }, { v: 'LISTEN_NOW', l: 'Listen now' },
     { v: 'INTERESTED', l: 'Interested' }, { v: 'SUBSCRIBE', l: 'Subscribe' }, { v: 'GET_TICKETS_NOW', l: 'Get tickets now' },
     { v: 'EXPERIENCE_NOW', l: 'Experience now' }, { v: 'PRE_ORDER_NOW', l: 'Pre-order now' }, { v: 'DONATE_NOW', l: 'Donate now' },
+    { v: 'WATCH_LIVE', l: 'Watch live' }, { v: 'VIEW_MORE', l: 'View more' }, { v: 'JOIN_NOW', l: 'Join now' },
   ]
 
   return (
@@ -1788,7 +1789,8 @@ function ManualStepStructure() {
     { v: 'CONVERSIONS', l: '💰 Conversões', desc: 'Pixel + evento de otimização' },
     { v: 'TRAFFIC', l: '🖱️ Tráfego', desc: 'Cliques para o site' },
     { v: 'REACH', l: '📡 Alcance', desc: 'Máximo de pessoas' },
-    { v: 'VIDEO_VIEWS', l: '▶️ Visualizações', desc: 'Reproduções do vídeo' },
+    { v: 'VIDEO_VIEWS', l: '▶️ Visualizações', desc: 'Engaged view do vídeo' },
+    { v: 'ENGAGEMENT', l: '💬 Engajamento', desc: 'Seguidores e interação' },
   ]
 
   const OPT_EVENTS: Record<string, { v: string; l: string }[]> = {
@@ -1798,10 +1800,12 @@ function ManualStepStructure() {
       { v: 'ON_WEB_CART', l: 'Add to Cart' },
       { v: 'ON_WEB_DETAIL', l: 'View Content' },
       { v: 'ADD_BILLING', l: 'Add Payment Info' },
+      { v: 'PAGE_VISIT', l: 'Page Visit' },
     ],
-    TRAFFIC: [{ v: 'CLICK', l: 'Clique' }],
-    REACH: [{ v: 'REACH', l: 'Alcance' }],
-    VIDEO_VIEWS: [{ v: 'VIDEO_PLAY', l: 'Reprodução' }],
+    TRAFFIC: [{ v: 'CLICK', l: 'Clique' }, { v: 'TRAFFIC_LANDING_PAGE_VIEW', l: 'Landing Page View' }, { v: 'DESTINATION_VISIT', l: 'Destination Visit' }],
+    REACH: [{ v: 'REACH', l: 'Alcance' }, { v: 'SHOW', l: 'Impressões' }],
+    VIDEO_VIEWS: [{ v: 'ENGAGED_VIEW', l: 'Engaged View (6s)' }, { v: 'ENGAGED_VIEW_FIFTEEN', l: 'Engaged View (15s)' }],
+    ENGAGEMENT: [{ v: 'FOLLOWERS', l: 'Seguidores' }],
   }
 
   return (
@@ -2244,10 +2248,12 @@ function QueueManualConfig() {
     { v: 'INSTALL_NOW', l: 'Install now' }, { v: 'GET_SHOWTIMES', l: 'Get showtimes' }, { v: 'LISTEN_NOW', l: 'Listen now' },
     { v: 'INTERESTED', l: 'Interested' }, { v: 'SUBSCRIBE', l: 'Subscribe' }, { v: 'GET_TICKETS_NOW', l: 'Get tickets now' },
     { v: 'EXPERIENCE_NOW', l: 'Experience now' }, { v: 'PRE_ORDER_NOW', l: 'Pre-order now' }, { v: 'DONATE_NOW', l: 'Donate now' },
+    { v: 'WATCH_LIVE', l: 'Watch live' }, { v: 'VIEW_MORE', l: 'View more' }, { v: 'JOIN_NOW', l: 'Join now' },
   ]
   const OBJECTIVES = [
     { v: 'CONVERSIONS', l: '💰 Conversões' }, { v: 'TRAFFIC', l: '🖱️ Tráfego' },
     { v: 'REACH', l: '📡 Alcance' }, { v: 'VIDEO_VIEWS', l: '▶️ Views' },
+    { v: 'ENGAGEMENT', l: '💬 Engajamento' },
   ]
 
   function toggleAge(v: string) { const n = new Set(ageGroups); n.has(v) ? n.delete(v) : n.add(v); setAgeGroups(n); localStorage.setItem('hawklaunch_manual_age_groups', JSON.stringify([...n])) }

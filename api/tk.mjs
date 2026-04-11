@@ -224,10 +224,12 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
   return { ok: false, error: lastError + ' (3 tentativas)' }
 }
 
-var WANTED_CTAS = ['visit store','shop now','learn more','sign up','view now','read more','check it out','apply now','book now','order now','watch now','download','contact us','play game','get quote','install now','get showtimes','listen now','interested','subscribe','get tickets now','experience now','pre-order now','donate now','buy it now','get yours now','shop today','order today','shop','order yours today']
+var WANTED_CTAS = ['visit store','shop now','learn more','sign up','view now','read more','check it out','apply now','book now','order now','watch now','download','contact us','play game','get quote','install now','get showtimes','listen now','interested','subscribe','get tickets now','experience now','pre-order now','donate now','buy it now','get yours now','shop today','order today','shop','order yours today','watch live','view more','join now']
 
-async function getOrCreateCTA(token, advertiserId, proxyRaw) {
-  var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&new_version=true&objective_type=WEB_CONVERSIONS&promotion_type=WEBSITE&language=en', token, 'GET', null, proxyRaw)
+async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, promotionType) {
+  var ctaObj = objectiveType || 'WEB_CONVERSIONS'
+  var ctaPromo = promotionType || 'WEBSITE'
+  var rec = await tt('/creative/cta/recommend/?advertiser_id=' + advertiserId + '&new_version=true&objective_type=' + ctaObj + '&promotion_type=' + ctaPromo + '&language=en', token, 'GET', null, proxyRaw)
   if (rec.code !== 0 || !rec.data || !rec.data.recommend_assets || rec.data.recommend_assets.length === 0) return { ok: false, error: 'CTA recommend failed' }
   var assets = rec.data.recommend_assets
   var filtered = assets.filter(function(a) { return WANTED_CTAS.indexOf((a.asset_content || '').toLowerCase()) !== -1 })
@@ -742,12 +744,12 @@ export default async function handler(req, res) {
             pixel_id: pixelId,
             promotion_type: 'WEBSITE',
             promotion_website_type: 'UNSET',
-            landing_page_url: accountDomain,
             targeting_spec: { location_ids: body.location_ids || ['3469034'] },
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
             click_attribution_window: 'SEVEN_DAYS',
             view_attribution_window: 'ONE_DAY',
+            operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
           if (baseCpa > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
@@ -791,11 +793,16 @@ export default async function handler(req, res) {
                 advertiser_id: advId,
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
-                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id, deeplink_type: 'NORMAL' } }],
+                creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
+                deeplink_list: [{ deeplink: accountDomain, deeplink_type: 'NORMAL' }],
               }
-              if (ctaId) adPayload.ad_configuration = { call_to_action_id: ctaId }
+              if (ctaId) {
+                adPayload.ad_configuration = { call_to_action_id: ctaId }
+              } else {
+                adPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
+              }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes, adOk = false
@@ -964,43 +971,57 @@ export default async function handler(req, res) {
             placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
-            promotion_type: 'WEBSITE',
-            promotion_website_type: 'UNSET',
-            landing_page_url: accountDomain,
             schedule_type: 'SCHEDULE_FROM_NOW',
             schedule_start_time: jitteredSchedule,
             location_ids: body.location_ids || ['3469034'],
             pacing: 'PACING_MODE_SMOOTH',
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
           }
+          // promotion_type not needed for REACH, VIDEO_VIEWS, ENGAGEMENT
+          if (effectiveObjective !== 'REACH' && effectiveObjective !== 'VIDEO_VIEWS' && effectiveObjective !== 'ENGAGEMENT') {
+            agPayload.promotion_type = 'WEBSITE'
+            agPayload.promotion_website_type = 'UNSET'
+            agPayload.landing_page_url = accountDomain
+          }
           if (body.age_groups && body.age_groups.length > 0) agPayload.age_groups = body.age_groups
           if (body.gender && body.gender !== 'GENDER_UNLIMITED') agPayload.gender = body.gender
           if (body.os && body.os.length > 0) agPayload.operating_systems = body.os
 
-          if (isCBO) {
-            agPayload.budget_mode = 'BUDGET_MODE_INFINITE'
-          } else {
+          if (!isCBO) {
+            // ABO: budget at adgroup level
             agPayload.budget_mode = 'BUDGET_MODE_DAY'
             agPayload.budget = humanBudget
           }
+          // CBO: budget_mode at adgroup level is ignored per v1.3 docs
 
-          if (pixelId) {
+          if (pixelId && (effectiveObjective === 'CONVERSIONS' || effectiveObjective === 'WEB_CONVERSIONS')) {
             agPayload.pixel_id = pixelId
             agPayload.optimization_event = body.optimization_event || 'SHOPPING'
             agPayload.click_attribution_window = 'SEVEN_DAYS'
             agPayload.view_attribution_window = 'ONE_DAY'
           }
 
+          // VIDEO_VIEWS requires bid_display_mode CPV
+          if (effectiveObjective === 'VIDEO_VIEWS' && agPayload.billing_event === 'CPV') {
+            agPayload.bid_display_mode = 'CPV'
+          }
+
           if (!isCBO && body.bid_price && parseFloat(body.bid_price) > 0) {
             agPayload.bid_type = 'BID_TYPE_CUSTOM'
-            agPayload.conversion_bid_price = convertBudget(parseFloat(body.bid_price), accountCurrency)
+            var convertedBid = convertBudget(parseFloat(body.bid_price), accountCurrency)
+            // CPC billing uses bid_price; OCPM/CPM/CPV uses conversion_bid_price
+            if (agPayload.billing_event === 'CPC') {
+              agPayload.bid_price = convertedBid
+            } else {
+              agPayload.conversion_bid_price = convertedBid
+            }
           } else {
             agPayload.bid_type = 'BID_TYPE_NO_BID'
           }
 
-          // Smart Creative (ACO) requires creative_material_mode on adgroup
+          // Smart Creative (ACO) — docs v1.3 recomendam CUSTOM + /ad/aco/create/
           if (body.identity_type === 'AUTH_CODE') {
-            agPayload.creative_material_mode = 'SMART_CREATIVE'
+            agPayload.creative_material_mode = 'CUSTOM'
           }
 
           var agRes
@@ -1050,9 +1071,10 @@ export default async function handler(req, res) {
               : [{ title: 'Shop now', material_operation_status: 'ENABLE' }]
 
             // CTA Portfolio (same approach as Smart+ — raw enums not supported)
+            var needsPromotion = effectiveObjective !== 'REACH' && effectiveObjective !== 'VIDEO_VIEWS' && effectiveObjective !== 'ENGAGEMENT'
             var ctaResult
             try {
-              ctaResult = await getOrCreateCTA(token, advId, accountProxy)
+              ctaResult = await getOrCreateCTA(token, advId, accountProxy, effectiveObjective, needsPromotion ? 'WEBSITE' : undefined)
             } catch(e) {
               ctaResult = { ok: false, error: e.message }
             }
@@ -1069,9 +1091,12 @@ export default async function handler(req, res) {
               landing_page_urls: [{ landing_page_url: accountDomain }],
               common_material: {
                 ad_name: (body.ad_name || campPayload.campaign_name),
-                is_smart_creative: true,
-                call_to_action_id: ctaResult.ok ? ctaResult.call_to_action_id : undefined,
               },
+            }
+            if (ctaResult.ok) {
+              acoPayload.common_material.call_to_action_id = ctaResult.call_to_action_id
+            } else {
+              acoPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
