@@ -71,10 +71,28 @@ function convertBudget(brlValue, currency) {
   return Math.round(converted / 5) * 5
 }
 
-function jitterSchedule(scheduleStr, minMinutes, maxMinutes) {
+function tzToUTC(dateStr, tz) {
+  // Convert a datetime string in a given timezone to UTC
+  // e.g. "2026-04-12 06:00:00" in America/Sao_Paulo → "2026-04-12 09:00:00" UTC
+  if (!tz) return dateStr
+  try {
+    var asUTC = new Date(dateStr.replace(' ', 'T') + 'Z')
+    var formatted = asUTC.toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
+    var asTZ = new Date(formatted.replace(' ', 'T') + 'Z')
+    var offsetMs = asUTC.getTime() - asTZ.getTime()
+    var utcTime = new Date(asUTC.getTime() + offsetMs)
+    return utcTime.toISOString().replace('T', ' ').substring(0, 19)
+  } catch(e) {
+    return dateStr
+  }
+}
+
+function jitterSchedule(scheduleStr, minMinutes, maxMinutes, tz) {
   try {
     var base = scheduleStr || new Date(Date.now() + 10*60000).toISOString().replace('T',' ').substring(0,19)
-    var d = new Date(base.replace(' ', 'T') + 'Z')
+    // Convert from target timezone to UTC (TikTok API expects UTC+0)
+    var utcStr = tz ? tzToUTC(base, tz) : base
+    var d = new Date(utcStr.replace(' ', 'T') + 'Z')
     if (isNaN(d.getTime())) d = new Date(Date.now() + 10*60000)
     var jitter = Math.floor(Math.random() * (maxMinutes - minMinutes + 1)) + minMinutes
     d.setMinutes(d.getMinutes() + jitter)
@@ -730,7 +748,7 @@ export default async function handler(req, res) {
           var scheduleStart = body.schedule_start
             ? body.schedule_start
             : new Date(Date.now() + 10*60000).toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
-          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
+          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8, tz)
           var baseCpa = parseFloat(body.target_cpa) || 0
           if (baseCpa > 0) baseCpa = convertBudget(baseCpa, accountCurrency)
           var agPayload = {
@@ -960,7 +978,7 @@ export default async function handler(req, res) {
           var scheduleStart = body.schedule_start
             ? body.schedule_start
             : new Date(Date.now() + 10*60000).toLocaleString('sv-SE', { timeZone: tz }).replace(',', '')
-          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8)
+          var jitteredSchedule = jitterSchedule(scheduleStart, 0, 8, tz)
 
           var agPayload = {
             request_id: makeRequestId(),
