@@ -266,6 +266,33 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 }
 
 
+async function uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw) {
+  var res = await tt('/file/image/ad/upload/', token, 'POST', {
+    advertiser_id: advertiserId,
+    upload_type: 'UPLOAD_BY_URL',
+    image_url: imageUrl
+  }, proxyRaw)
+  if (res.code !== 0 || !res.data || !res.data.image_id) return { ok: false, error: 'Image upload failed: ' + (res.message || '') }
+  return { ok: true, image_id: res.data.image_id }
+}
+
+async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta) {
+  var imgRes = await uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw)
+  if (!imgRes.ok) return imgRes
+  var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
+    advertiser_id: advertiserId,
+    creative_portfolio_type: 'CARD',
+    portfolio_content: [{
+      card_type: 'IMAGE',
+      image_id: imgRes.image_id,
+      title: (title || '').substring(0, 54) || 'Shop Now',
+      call_to_action: cta || 'SHOP_NOW'
+    }]
+  }, proxyRaw)
+  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card create failed: ' + (portfolioRes.message || '') }
+  return { ok: true, card_id: portfolioRes.data.creative_portfolio_id }
+}
+
 function parseProxyList(rawList) {
   if (!Array.isArray(rawList)) return []
   return rawList.map(parseProxy).filter(Boolean)
@@ -703,6 +730,24 @@ export default async function handler(req, res) {
           if (!pixelId) { L(advId, '⚠️ No pixel'); results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue }
         }
 
+        // Display Card (interactive add-on)
+        var displayCardId = null
+        if (body.display_card && body.display_card.image_url) {
+          L(advId, 'Creating Display Card...')
+          try {
+            var cardRes = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || 'SHOP_NOW')
+            if (cardRes.ok) {
+              displayCardId = cardRes.card_id
+              L(advId, '✅ Display Card: ' + displayCardId)
+            } else {
+              L(advId, '⚠️ Display Card: ' + cardRes.error)
+              results.errors.push({ account: advId, step: 'display_card', error: cardRes.error })
+            }
+          } catch(e) {
+            L(advId, '❌ Display Card error: ' + e.message)
+          }
+        }
+
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
           var baseBudget = body.budget || 111
@@ -820,6 +865,9 @@ export default async function handler(req, res) {
               } else {
                 adPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
               }
+              if (displayCardId) {
+                adPayload.interactive_add_on_list = [{ card_id: displayCardId }]
+              }
               if (c > 0 || a > 0) await rndDelay(500, 1000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes, adOk = false
@@ -928,6 +976,24 @@ export default async function handler(req, res) {
           }
         }
 
+        // Display Card (interactive add-on)
+        var displayCardIdM = null
+        if (body.display_card && body.display_card.image_url) {
+          L(advId, 'Creating Display Card...')
+          try {
+            var cardResM = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || body.call_to_action || 'SHOP_NOW')
+            if (cardResM.ok) {
+              displayCardIdM = cardResM.card_id
+              L(advId, '✅ Display Card: ' + displayCardIdM)
+            } else {
+              L(advId, '⚠️ Display Card: ' + cardResM.error)
+              results.errors.push({ account: advId, step: 'display_card', error: cardResM.error })
+            }
+          } catch(e) {
+            L(advId, '❌ Display Card error: ' + e.message)
+          }
+        }
+
         var campaignsPerAccount = body.campaigns_per_account || 1
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
@@ -985,7 +1051,8 @@ export default async function handler(req, res) {
             advertiser_id: advId,
             campaign_id: campaignId,
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
-            placement_type: 'PLACEMENT_TYPE_AUTOMATIC',
+            placement_type: 'PLACEMENT_TYPE_NORMAL',
+            placements: ['PLACEMENT_TIKTOK'],
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             schedule_type: 'SCHEDULE_FROM_NOW',
@@ -1115,6 +1182,9 @@ export default async function handler(req, res) {
             } else {
               acoPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
             }
+            if (displayCardIdM) {
+              acoPayload.card_list = [{ card_id: displayCardIdM }]
+            }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
             await rndDelay(2000, 3000)
@@ -1157,6 +1227,7 @@ export default async function handler(req, res) {
                 deeplink_type: 'NORMAL',
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
+              if (displayCardIdM) creativeV.card_id = displayCardIdM
               var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
               L(advId, 'Ad vídeo ' + (v+1) + '/' + videoIds.length + '...')
               var adResV

@@ -557,6 +557,9 @@ function StepCreative() {
   const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
   const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
   const sparkCodeList = sparkCodes.split('\n').map(c => c.trim()).filter(c => c.length > 0)
+  const [cardEnabled, setCardEnabled] = useState(() => localStorage.getItem('hawklaunch_card_enabled') === 'true')
+  const [cardImageUrl, setCardImageUrl] = useState(() => localStorage.getItem('hawklaunch_card_image_url') || '')
+  const [cardTitle, setCardTitle] = useState(() => localStorage.getItem('hawklaunch_card_title') || '')
 
   return (
     <div className="card animate-fade-in">
@@ -657,6 +660,36 @@ function StepCreative() {
         <label className="label mb-1.5 block">Textos (um por linha)</label>
         <textarea className="input min-h-[60px]" placeholder="Oferta imperdível!" value={adTexts} onChange={e=>{setAdTexts(e.target.value);localStorage.setItem("hawklaunch_ad_texts",e.target.value)}} />
       </div>
+
+      <div className="mt-4 p-4 bg-hawk-input border border-hawk-border rounded-lg">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">Display Card</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-400">add-on</span>
+          </div>
+          <button onClick={() => { const v = !cardEnabled; setCardEnabled(v); localStorage.setItem('hawklaunch_card_enabled', String(v)) }}
+            className={`w-10 h-5 rounded-full transition-colors relative ${cardEnabled ? 'bg-hawk-accent' : 'bg-gray-600'}`}>
+            <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${cardEnabled ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {cardEnabled && (
+          <div className="space-y-3">
+            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA. A imagem deve ser uma URL publica (ex: hospedada no Imgur, Cloudinary, etc).</div>
+            <div>
+              <label className="label mb-1 block text-[11px]">URL da imagem do card</label>
+              <input className="input text-xs" placeholder="https://i.imgur.com/exemplo.jpg" value={cardImageUrl}
+                onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1 block text-[11px]">Titulo do card <span className="text-gray-500">(max 54 chars)</span></label>
+              <input className="input text-xs" placeholder="Confira nossa oferta!" maxLength={54} value={cardTitle}
+                onChange={e => { setCardTitle(e.target.value); localStorage.setItem('hawklaunch_card_title', e.target.value) }} />
+              <div className="text-[10px] text-gray-500 mt-0.5 text-right">{cardTitle.length}/54</div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="mt-4 px-4 py-3 bg-hawk-input rounded-lg flex items-center justify-between">
         <span className="text-xs text-gray-400">{creativeMode==='spark-codes'?`${sparkCodeList.length} código(s)`:creativeMode==='library'?`${selectedV.size} vídeo(s)`:'Upload'}</span>
         {destinationUrl&&<span className="text-[10px] text-green-400">✓ URL configurada</span>}
@@ -946,6 +979,9 @@ function StepLaunch() {
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: getLocationIds(),
         schedule_start: scheduleStart, timezone: getTargetTimezone(),
+        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
+          ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '' }
+          : undefined,
       }
 
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
@@ -1086,6 +1122,9 @@ function StepLaunch() {
         age_groups: autoTarget ? [] : ageGroups,
         gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
         os: autoTarget ? [] : osTarget,
+        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
+          ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+          : undefined,
       }
 
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
@@ -1191,6 +1230,9 @@ function StepLaunch() {
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
+      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
+        ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '' }
+        : undefined,
     }
 
     const manualPayload = {
@@ -1204,6 +1246,9 @@ function StepLaunch() {
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
+      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
+        ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+        : undefined,
     }
 
     try {
@@ -1662,6 +1707,9 @@ function ManualStepCreative() {
   const [domainList, setDomainList] = useState(() => localStorage.getItem('hawklaunch_domain_list') || '')
   const [adTexts, setAdTexts] = useState(() => localStorage.getItem('hawklaunch_ad_texts') || '')
   const [cta, setCta] = useState(() => localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW')
+  const [cardEnabled, setCardEnabled] = useState(() => localStorage.getItem('hawklaunch_card_enabled') === 'true')
+  const [cardImageUrl, setCardImageUrl] = useState(() => localStorage.getItem('hawklaunch_card_image_url') || '')
+  const [cardTitle, setCardTitle] = useState(() => localStorage.getItem('hawklaunch_card_title') || '')
 
   const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
 
@@ -1774,6 +1822,35 @@ function ManualStepCreative() {
           <textarea className="input min-h-[70px]" placeholder="Oferta imperdível!" value={adTexts}
             onChange={e => { setAdTexts(e.target.value); localStorage.setItem('hawklaunch_ad_texts', e.target.value) }} />
         </div>
+      </div>
+
+      <div className="mt-4 p-4 bg-hawk-input border border-hawk-border rounded-lg">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">Display Card</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-400">add-on</span>
+          </div>
+          <button onClick={() => { const v = !cardEnabled; setCardEnabled(v); localStorage.setItem('hawklaunch_card_enabled', String(v)) }}
+            className={`w-10 h-5 rounded-full transition-colors relative ${cardEnabled ? 'bg-hawk-accent' : 'bg-gray-600'}`}>
+            <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${cardEnabled ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {cardEnabled && (
+          <div className="space-y-3">
+            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA. A imagem deve ser uma URL publica (ex: hospedada no Imgur, Cloudinary, etc).</div>
+            <div>
+              <label className="label mb-1 block text-[11px]">URL da imagem do card</label>
+              <input className="input text-xs" placeholder="https://i.imgur.com/exemplo.jpg" value={cardImageUrl}
+                onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+            </div>
+            <div>
+              <label className="label mb-1 block text-[11px]">Titulo do card <span className="text-gray-500">(max 54 chars)</span></label>
+              <input className="input text-xs" placeholder="Confira nossa oferta!" maxLength={54} value={cardTitle}
+                onChange={e => { setCardTitle(e.target.value); localStorage.setItem('hawklaunch_card_title', e.target.value) }} />
+              <div className="text-[10px] text-gray-500 mt-0.5 text-right">{cardTitle.length}/54</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <StepFooter prev={1} next={3} />
