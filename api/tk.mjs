@@ -296,31 +296,22 @@ async function uploadCardImage(token, advertiserId, imgBuf) {
     body: formData,
   })
   var data = await uploadRes.json()
-  if (data.code !== 0 || !data.data || !data.data.image_id) return { ok: false, error: 'Image upload failed: ' + (data.message || '') }
-  return { ok: true, image_id: data.data.image_id }
+  if (data.code !== 0 || !data.data || !data.data.image_id) return { ok: false, error: 'Image upload failed: ' + (data.message || JSON.stringify(data)) }
+  return { ok: true, image_id: data.data.image_id, image_url: data.data.image_url || '' }
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  // Sempre baixar imagem e re-upload como PNG 421x750
+  // Sempre baixar imagem da URL e re-upload como PNG 421x750
   var imgBuf = null
+  var dbg = 'url=' + (imageUrl || 'none') + ' id=' + (existingImageId || 'none')
   if (imageUrl) {
     try {
       var dlRes = await nodeFetch(imageUrl)
       if (dlRes.ok) imgBuf = Buffer.from(await dlRes.arrayBuffer())
-    } catch(e) {}
+      dbg += ' dl=' + (dlRes.ok ? imgBuf.length : dlRes.status)
+    } catch(e) { dbg += ' dlErr=' + e.message }
   }
-  if (!imgBuf && existingImageId) {
-    // Buscar URL da imagem no TikTok
-    try {
-      var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advertiserId, image_ids: JSON.stringify([existingImageId]) }, proxyRaw)
-      var imgUrl = searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0] && (searchRes.data.list[0].image_url || searchRes.data.list[0].url)
-      if (imgUrl) {
-        var dlRes2 = await nodeFetch(imgUrl)
-        if (dlRes2.ok) imgBuf = Buffer.from(await dlRes2.arrayBuffer())
-      }
-    } catch(e) {}
-  }
-  if (!imgBuf || imgBuf.length < 100) return { ok: false, error: 'Could not obtain card image' }
+  if (!imgBuf || imgBuf.length < 100) return { ok: false, error: 'Could not obtain card image (' + dbg + ')' }
   var uploadRes = await uploadCardImage(token, advertiserId, imgBuf)
   if (!uploadRes.ok) return uploadRes
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
@@ -363,15 +354,7 @@ export default async function handler(req, res) {
       try {
         var uploadRes = await uploadCardImage(token, advId, rawBuf)
         if (!uploadRes.ok) return res.json({ code: -1, error: uploadRes.error, data: null })
-        // Buscar URL da imagem recém-enviada
-        var imgUrl = ''
-        try {
-          var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advId, image_ids: JSON.stringify([uploadRes.image_id]) })
-          if (searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0]) {
-            imgUrl = searchRes.data.list[0].image_url || searchRes.data.list[0].url || ''
-          }
-        } catch(e) {}
-        return res.json({ code: 0, data: { image_id: uploadRes.image_id, image_url: imgUrl } })
+        return res.json({ code: 0, data: { image_id: uploadRes.image_id, image_url: uploadRes.image_url || '' } })
       } catch(e) {
         return res.json({ code: -1, error: e.message, data: null })
       }
