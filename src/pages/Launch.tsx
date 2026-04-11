@@ -1097,7 +1097,7 @@ function StepLaunch() {
         location_ids: getLocationIds(),
         schedule_start: scheduleStart, timezone: getTargetTimezone(),
         display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
+          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
           : undefined,
       }
 
@@ -1240,7 +1240,7 @@ function StepLaunch() {
         gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
         os: autoTarget ? [] : osTarget,
         display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
           : undefined,
       }
 
@@ -1348,7 +1348,7 @@ function StepLaunch() {
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
+        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
         : undefined,
     }
 
@@ -1364,7 +1364,7 @@ function StepLaunch() {
       start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
       display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
         : undefined,
     }
 

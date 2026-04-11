@@ -287,30 +287,16 @@ async function uploadImageResized(token, advertiserId, imgBuf) {
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  // Sempre baixar imagem, redimensionar para 421x750, e re-upload
+  // Baixar imagem da URL, redimensionar para 421x750, e upload
+  if (!imageUrl) return { ok: false, error: 'No image_url provided for Display Card' }
   var imgBuf = null
-  if (existingImageId) {
-    // Buscar URL da imagem existente via search
-    try {
-      var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advertiserId, image_ids: JSON.stringify([existingImageId]) }, proxyRaw)
-      if (searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0]) {
-        var imgUrl = searchRes.data.list[0].image_url || searchRes.data.list[0].url
-        if (imgUrl) {
-          var dlRes = await nodeFetch(imgUrl)
-          imgBuf = Buffer.from(await dlRes.arrayBuffer())
-        }
-      }
-    } catch(e) {}
+  try {
+    var dlRes = await nodeFetch(imageUrl)
+    imgBuf = Buffer.from(await dlRes.arrayBuffer())
+  } catch(e) {
+    return { ok: false, error: 'Failed to download image: ' + e.message }
   }
-  if (!imgBuf && imageUrl) {
-    try {
-      var dlRes = await nodeFetch(imageUrl)
-      imgBuf = Buffer.from(await dlRes.arrayBuffer())
-    } catch(e) {
-      return { ok: false, error: 'Failed to download image: ' + e.message }
-    }
-  }
-  if (!imgBuf) return { ok: false, error: 'No image_id or image_url provided' }
+  if (!imgBuf || imgBuf.length === 0) return { ok: false, error: 'Downloaded image is empty' }
   var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
   if (!uploadRes.ok) return uploadRes
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
