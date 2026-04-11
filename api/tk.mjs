@@ -359,7 +359,7 @@ export default async function handler(req, res) {
         })
         var uploadData = await uploadRes.json()
         if (uploadData.code !== 0 || !uploadData.data) return res.json({ code: uploadData.code || -1, error: uploadData.message || 'Upload failed', data: null })
-        return res.json({ code: 0, data: { image_id: uploadData.data.image_id, image_url: uploadData.data.preview_url || '' } })
+        return res.json({ code: 0, data: { image_id: uploadData.data.image_id, image_url: uploadData.data.image_url || uploadData.data.preview_url || '' } })
       } catch(e) {
         return res.json({ code: -1, error: e.message, data: null })
       }
