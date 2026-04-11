@@ -288,20 +288,29 @@ async function uploadImageResized(token, advertiserId, imgBuf) {
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
   var finalImageId = null
+  var debugInfo = { imageUrl: imageUrl || '(empty)', existingImageId: existingImageId || '(empty)' }
   // Caminho 1: tem URL → baixar, redimensionar 421x750, re-upload
   if (imageUrl) {
     try {
       var dlRes = await nodeFetch(imageUrl)
+      debugInfo.downloadStatus = dlRes.status
       var imgBuf = Buffer.from(await dlRes.arrayBuffer())
+      debugInfo.downloadSize = imgBuf.length
       if (imgBuf && imgBuf.length > 0) {
         var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
+        debugInfo.uploadResult = uploadRes.ok ? 'ok:' + uploadRes.image_id : 'fail:' + (uploadRes.error || '?')
         if (uploadRes.ok) finalImageId = uploadRes.image_id
       }
-    } catch(e) {}
+    } catch(e) {
+      debugInfo.error = e.message
+    }
   }
-  // Caminho 2: fallback — usar image_id existente direto (pode já estar 421x750)
-  if (!finalImageId && existingImageId) finalImageId = existingImageId
-  if (!finalImageId) return { ok: false, error: 'No image provided for Display Card' }
+  // Caminho 2: fallback — usar image_id existente direto
+  if (!finalImageId && existingImageId) {
+    debugInfo.usingFallback = true
+    finalImageId = existingImageId
+  }
+  if (!finalImageId) return { ok: false, error: 'No image provided for Display Card. Debug: ' + JSON.stringify(debugInfo) }
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
@@ -312,7 +321,7 @@ async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title,
       call_to_action: cta || 'SHOP_NOW'
     }]
   }, proxyRaw)
-  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card create failed: ' + (portfolioRes.message || '') }
+  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card create failed: ' + (portfolioRes.message || '') + ' | Debug: ' + JSON.stringify(debugInfo) }
   return { ok: true, card_id: portfolioRes.data.creative_portfolio_id }
 }
 
