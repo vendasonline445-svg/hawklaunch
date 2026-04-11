@@ -268,8 +268,22 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 }
 
 
-async function uploadImageResized(token, advertiserId, imgBuf) {
-  var resized = await sharp(imgBuf).rotate().resize(421, 750, { fit: 'cover' }).png().toBuffer()
+async function resizeCardImage(imgBuf) {
+  // Resize para 421x750 (Display Card TikTok) — PNG sem EXIF
+  var resized = await sharp(imgBuf, { failOnError: false })
+    .resize(421, 750, { fit: 'cover', position: 'centre' })
+    .png({ compressionLevel: 6 })
+    .toBuffer()
+  // Verificar dimensões — garantia extra
+  var meta = await sharp(resized).metadata()
+  if (meta.width !== 421 || meta.height !== 750) {
+    resized = await sharp(resized).resize(421, 750, { fit: 'fill' }).png().toBuffer()
+  }
+  return resized
+}
+
+async function uploadCardImage(token, advertiserId, imgBuf) {
+  var resized = await resizeCardImage(imgBuf)
   var imageMd5 = createHash('md5').update(resized).digest('hex')
   var formData = new FormData()
   formData.append('advertiser_id', advertiserId)
@@ -287,41 +301,39 @@ async function uploadImageResized(token, advertiserId, imgBuf) {
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  var finalImageId = null
-  var debugInfo = { imageUrl: imageUrl || '(empty)', existingImageId: existingImageId || '(empty)' }
-  // Caminho 1: tem URL → baixar, redimensionar 421x750, re-upload
+  // Sempre baixar imagem e re-upload como PNG 421x750
+  var imgBuf = null
   if (imageUrl) {
     try {
       var dlRes = await nodeFetch(imageUrl)
-      debugInfo.downloadStatus = dlRes.status
-      var imgBuf = Buffer.from(await dlRes.arrayBuffer())
-      debugInfo.downloadSize = imgBuf.length
-      if (imgBuf && imgBuf.length > 0) {
-        var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
-        debugInfo.uploadResult = uploadRes.ok ? 'ok:' + uploadRes.image_id : 'fail:' + (uploadRes.error || '?')
-        if (uploadRes.ok) finalImageId = uploadRes.image_id
+      if (dlRes.ok) imgBuf = Buffer.from(await dlRes.arrayBuffer())
+    } catch(e) {}
+  }
+  if (!imgBuf && existingImageId) {
+    // Buscar URL da imagem no TikTok
+    try {
+      var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advertiserId, image_ids: JSON.stringify([existingImageId]) }, proxyRaw)
+      var imgUrl = searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0] && (searchRes.data.list[0].image_url || searchRes.data.list[0].url)
+      if (imgUrl) {
+        var dlRes2 = await nodeFetch(imgUrl)
+        if (dlRes2.ok) imgBuf = Buffer.from(await dlRes2.arrayBuffer())
       }
-    } catch(e) {
-      debugInfo.error = e.message
-    }
+    } catch(e) {}
   }
-  // Caminho 2: fallback — usar image_id existente direto
-  if (!finalImageId && existingImageId) {
-    debugInfo.usingFallback = true
-    finalImageId = existingImageId
-  }
-  if (!finalImageId) return { ok: false, error: 'No image provided for Display Card. Debug: ' + JSON.stringify(debugInfo) }
+  if (!imgBuf || imgBuf.length < 100) return { ok: false, error: 'Could not obtain card image' }
+  var uploadRes = await uploadCardImage(token, advertiserId, imgBuf)
+  if (!uploadRes.ok) return uploadRes
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
     portfolio_content: [{
       card_type: 'IMAGE',
-      image_id: finalImageId,
+      image_id: uploadRes.image_id,
       title: (title || '').substring(0, 54) || 'Shop Now',
       call_to_action: cta || 'SHOP_NOW'
     }]
   }, proxyRaw)
-  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card create failed: ' + (portfolioRes.message || '') + ' | Debug: ' + JSON.stringify(debugInfo) }
+  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card failed: ' + (portfolioRes.message || '') + ' (img=' + uploadRes.image_id + ')' }
   return { ok: true, card_id: portfolioRes.data.creative_portfolio_id }
 }
 
@@ -348,27 +360,18 @@ export default async function handler(req, res) {
       var advId = body && body.advertiser_id
       if (!advId || !body.image_base64) return res.status(400).json({ error: 'advertiser_id and image_base64 required' })
       var rawBuf = Buffer.from(body.image_base64, 'base64')
-      // Auto-resize para 421x750 (tamanho obrigatório do Display Card TikTok)
-      var imgBuf = await sharp(rawBuf).rotate().resize(421, 750, { fit: 'cover' }).png().toBuffer()
-      var fileName = 'card_' + Date.now() + '.png'
-      var mime = 'image/png'
-      var imageMd5 = createHash('md5').update(imgBuf).digest('hex')
-      var formData = new FormData()
-      formData.append('advertiser_id', advId)
-      formData.append('upload_type', 'UPLOAD_BY_FILE')
-      formData.append('image_signature', imageMd5)
-      formData.append('image_file', new Blob([imgBuf], { type: mime }), fileName)
       try {
-        var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
-          method: 'POST',
-          headers: {
-            'Access-Token': token,
-          },
-          body: formData,
-        })
-        var uploadData = await uploadRes.json()
-        if (uploadData.code !== 0 || !uploadData.data) return res.json({ code: uploadData.code || -1, error: uploadData.message || 'Upload failed', data: null })
-        return res.json({ code: 0, data: { image_id: uploadData.data.image_id, image_url: uploadData.data.image_url || uploadData.data.preview_url || '' } })
+        var uploadRes = await uploadCardImage(token, advId, rawBuf)
+        if (!uploadRes.ok) return res.json({ code: -1, error: uploadRes.error, data: null })
+        // Buscar URL da imagem recém-enviada
+        var imgUrl = ''
+        try {
+          var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advId, image_ids: JSON.stringify([uploadRes.image_id]) })
+          if (searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0]) {
+            imgUrl = searchRes.data.list[0].image_url || searchRes.data.list[0].url || ''
+          }
+        } catch(e) {}
+        return res.json({ code: 0, data: { image_id: uploadRes.image_id, image_url: imgUrl } })
       } catch(e) {
         return res.json({ code: -1, error: e.message, data: null })
       }
