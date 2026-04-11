@@ -1,5 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import nodeFetch from 'node-fetch'
+import { createHash } from 'crypto'
 
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
@@ -325,9 +326,11 @@ export default async function handler(req, res) {
       var ext = fileName.split('.').pop().toLowerCase()
       var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
       var mime = mimeMap[ext] || 'image/jpeg'
+      var imageMd5 = createHash('md5').update(imgBuf).digest('hex')
       var formData = new FormData()
       formData.append('advertiser_id', advId)
       formData.append('upload_type', 'UPLOAD_BY_FILE')
+      formData.append('image_signature', imageMd5)
       formData.append('image_file', new Blob([imgBuf], { type: mime }), fileName)
       try {
         var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
