@@ -563,6 +563,12 @@ function StepCreative() {
   const [cardImageId, setCardImageId] = useState(() => localStorage.getItem('hawklaunch_card_image_id') || '')
   const [cardUploading, setCardUploading] = useState(false)
   const [cardPreview, setCardPreview] = useState(() => localStorage.getItem('hawklaunch_card_preview') || '')
+  const [cardCta, setCardCta] = useState(() => localStorage.getItem('hawklaunch_card_cta') || 'LEARN_MORE')
+  const CARD_CTA_OPTIONS = [
+    { v: 'LEARN_MORE', l: 'Learn more' }, { v: 'SHOP_NOW', l: 'Shop now' }, { v: 'VISIT_STORE', l: 'Visit store' },
+    { v: 'SIGN_UP', l: 'Sign up' }, { v: 'VIEW_NOW', l: 'View now' }, { v: 'READ_MORE', l: 'Read more' },
+    { v: 'ORDER_NOW', l: 'Order now' }, { v: 'DOWNLOAD', l: 'Download' }, { v: 'SUBSCRIBE', l: 'Subscribe' },
+  ]
 
   async function handleCardImageUpload(file: File) {
     if (!selectedAccounts[0]) return
@@ -736,6 +742,13 @@ function StepCreative() {
               <input className="input text-xs" placeholder="Confira nossa oferta!" maxLength={54} value={cardTitle}
                 onChange={e => { setCardTitle(e.target.value); localStorage.setItem('hawklaunch_card_title', e.target.value) }} />
               <div className="text-[10px] text-gray-500 mt-0.5 text-right">{cardTitle.length}/54</div>
+            </div>
+            <div>
+              <label className="label mb-1 block text-[11px]">CTA do card</label>
+              <select className="input text-xs" value={cardCta}
+                onChange={e => { setCardCta(e.target.value); localStorage.setItem('hawklaunch_card_cta', e.target.value) }}>
+                {CARD_CTA_OPTIONS.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}
+              </select>
             </div>
           </div>
         )}
@@ -1097,7 +1110,7 @@ function StepLaunch() {
         location_ids: getLocationIds(),
         schedule_start: scheduleStart, timezone: getTargetTimezone(),
         display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
+          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: localStorage.getItem('hawklaunch_card_cta') || 'LEARN_MORE' }
           : undefined,
       }
 
@@ -1348,7 +1361,7 @@ function StepLaunch() {
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
-        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
+        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: localStorage.getItem('hawklaunch_card_cta') || 'LEARN_MORE' }
         : undefined,
     }
 
