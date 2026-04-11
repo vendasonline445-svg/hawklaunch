@@ -275,7 +275,7 @@ async function uploadImageResized(token, advertiserId, imgBuf) {
   formData.append('advertiser_id', advertiserId)
   formData.append('upload_type', 'UPLOAD_BY_FILE')
   formData.append('image_signature', imageMd5)
-  formData.append('image_file', new Blob([resized], { type: 'image/jpeg' }), 'card.jpg')
+  formData.append('image_file', new Blob([resized], { type: 'image/jpeg' }), 'card_' + Date.now() + '.jpg')
   var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
     method: 'POST',
     headers: { 'Access-Token': token },
@@ -338,7 +338,7 @@ export default async function handler(req, res) {
       var rawBuf = Buffer.from(body.image_base64, 'base64')
       // Auto-resize para 421x750 (tamanho obrigatório do Display Card TikTok)
       var imgBuf = await sharp(rawBuf).resize(421, 750, { fit: 'cover' }).jpeg({ quality: 90 }).toBuffer()
-      var fileName = (body.file_name || 'card.jpg').replace(/\.\w+$/, '.jpg')
+      var fileName = 'card_' + Date.now() + '.jpg'
       var mime = 'image/jpeg'
       var imageMd5 = createHash('md5').update(imgBuf).digest('hex')
       var formData = new FormData()
