@@ -924,6 +924,7 @@ function StepLaunch() {
   const [schedule, setSchedule] = useState('now')
   const [customSchedule, setCustomSchedule] = useState('')
   const [startPaused, setStartPaused] = useState(false)
+  const [autoAppeal, setAutoAppeal] = useState(() => localStorage.getItem('hawklaunch_auto_appeal') !== 'false')
   const [result, setResult] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
 
@@ -967,6 +968,68 @@ function StepLaunch() {
     return undefined
   }
 
+  async function autoReviewAndAppeal() {
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
+
+    addLog('INFO', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    addLog('INFO', '🔍 AUTO REVIEW — aguardando 5 min para TikTok revisar...')
+    for (let s = 300; s > 0 && !abortRef.current; s -= 30) {
+      addLog('DEBUG', '⏳ Review em ' + Math.ceil(s / 60) + ' min...')
+      await new Promise(r => setTimeout(r, 30000))
+    }
+    if (abortRef.current) { addLog('WARN', '⛔ Review cancelado'); return }
+
+    addLog('INFO', '🔎 Escaneando ' + selectedAccounts.length + ' conta(s) para ads rejeitados...')
+    let totalRejected = 0
+    let totalAppealed = 0
+    let totalAppealOk = 0
+
+    for (let ai = 0; ai < selectedAccounts.length; ai++) {
+      if (abortRef.current) break
+      const acc = selectedAccounts[ai]
+      const proxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+      addLog('INFO', 'Conta ' + (ai + 1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id))
+
+      try {
+        const r = await api.listRejectedAds(acc.advertiser_id, proxy)
+        const rejected = r.data?.list || []
+        const scanned = r.data?.scanned || 0
+
+        if (rejected.length === 0) {
+          addLog('OK', '✅ ' + scanned + ' ads escaneados — nenhum rejeitado')
+        } else {
+          totalRejected += rejected.length
+          addLog('WARN', '⚠️ ' + rejected.length + ' ad(s) rejeitado(s) de ' + scanned + ' escaneados')
+
+          for (let ri = 0; ri < rejected.length; ri++) {
+            if (abortRef.current) break
+            const ad = rejected[ri]
+            addLog('INFO', '📝 Apelando: ' + (ad.ad_name || ad.ad_id))
+            totalAppealed++
+            try {
+              const ar = await api.appealAd(acc.advertiser_id, ad.ad_id, proxy)
+              if (ar.code === 0) {
+                addLog('OK', '✅ Apelo enviado: ' + (ad.ad_name || ad.ad_id))
+                totalAppealOk++
+              } else {
+                addLog('ERROR', '❌ Apelo falhou: ' + (ar.message || '?'))
+              }
+            } catch (e: any) {
+              addLog('ERROR', '❌ Erro no apelo: ' + e.message)
+            }
+            if (ri < rejected.length - 1) await rndWait(2000, 5000)
+          }
+        }
+      } catch (e: any) {
+        addLog('ERROR', '❌ Erro ao escanear: ' + e.message)
+      }
+      if (ai < selectedAccounts.length - 1) await rndWait(500, 1300)
+    }
+
+    addLog('OK', '🏁 Review completo: ' + totalRejected + ' rejeitado(s), ' + totalAppealOk + '/' + totalAppealed + ' apelo(s) enviado(s)')
+  }
+
   async function launch() {
     setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true); abortRef.current = false
     if (campaignType === 'queue') {
@@ -975,6 +1038,9 @@ function StepLaunch() {
       await launchManual()
     } else {
       await launchSmart()
+    }
+    if (autoAppeal && !abortRef.current) {
+      await autoReviewAndAppeal()
     }
     setLaunching(false)
   }
@@ -1587,6 +1653,15 @@ function StepLaunch() {
         <div className="text-[11px] text-gray-500">Ative manualmente depois — reduz detecção de automação</div>
       </div>
       <div className={`toggle ${startPaused ? 'on' : ''}`} onClick={() => setStartPaused(!startPaused)}/>
+    </div>
+
+    {/* Auto Review & Appeal toggle */}
+    <div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-lg mb-4">
+      <div>
+        <div className="text-sm font-semibold">Auto Review + Appeal</div>
+        <div className="text-[11px] text-gray-500">Aguarda 5 min, escaneia ads rejeitados e apela automaticamente</div>
+      </div>
+      <div className={`toggle ${autoAppeal ? 'on' : ''}`} onClick={() => { const v = !autoAppeal; setAutoAppeal(v); localStorage.setItem('hawklaunch_auto_appeal', String(v)) }}/>
     </div>
 
     {/* Launch button */}
