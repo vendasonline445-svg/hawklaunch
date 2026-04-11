@@ -796,7 +796,6 @@ export default async function handler(req, res) {
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
                 ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
-                deeplink_list: [{ deeplink: accountDomain, deeplink_type: 'NORMAL' }],
               }
               if (ctaId) {
                 adPayload.ad_configuration = { call_to_action_id: ctaId }
