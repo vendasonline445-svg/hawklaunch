@@ -269,15 +269,14 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 
 
 async function resizeCardImage(imgBuf) {
-  // Resize para 421x750 (Display Card TikTok) — PNG sem EXIF
+  // TikTok inverte width/height no upload — enviar 750(w)x421(h) para que leia como 421x750
   var resized = await sharp(imgBuf, { failOnError: false })
-    .resize(421, 750, { fit: 'cover', position: 'centre' })
+    .resize(750, 421, { fit: 'cover', position: 'centre' })
     .png({ compressionLevel: 6 })
     .toBuffer()
-  // Verificar dimensões — garantia extra
   var meta = await sharp(resized).metadata()
-  if (meta.width !== 421 || meta.height !== 750) {
-    resized = await sharp(resized).resize(421, 750, { fit: 'fill' }).png().toBuffer()
+  if (meta.width !== 750 || meta.height !== 421) {
+    resized = await sharp(resized).resize(750, 421, { fit: 'fill' }).png().toBuffer()
   }
   return resized
 }
