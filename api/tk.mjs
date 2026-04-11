@@ -269,13 +269,13 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 
 
 async function uploadImageResized(token, advertiserId, imgBuf) {
-  var resized = await sharp(imgBuf).rotate().resize(421, 750, { fit: 'cover' }).jpeg({ quality: 90 }).toBuffer()
+  var resized = await sharp(imgBuf).rotate().resize(421, 750, { fit: 'cover' }).png().toBuffer()
   var imageMd5 = createHash('md5').update(resized).digest('hex')
   var formData = new FormData()
   formData.append('advertiser_id', advertiserId)
   formData.append('upload_type', 'UPLOAD_BY_FILE')
   formData.append('image_signature', imageMd5)
-  formData.append('image_file', new Blob([resized], { type: 'image/jpeg' }), 'card_' + Date.now() + '.jpg')
+  formData.append('image_file', new Blob([resized], { type: 'image/png' }), 'card_' + Date.now() + '.png')
   var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
     method: 'POST',
     headers: { 'Access-Token': token },
@@ -349,9 +349,9 @@ export default async function handler(req, res) {
       if (!advId || !body.image_base64) return res.status(400).json({ error: 'advertiser_id and image_base64 required' })
       var rawBuf = Buffer.from(body.image_base64, 'base64')
       // Auto-resize para 421x750 (tamanho obrigatório do Display Card TikTok)
-      var imgBuf = await sharp(rawBuf).rotate().resize(421, 750, { fit: 'cover' }).jpeg({ quality: 90 }).toBuffer()
-      var fileName = 'card_' + Date.now() + '.jpg'
-      var mime = 'image/jpeg'
+      var imgBuf = await sharp(rawBuf).rotate().resize(421, 750, { fit: 'cover' }).png().toBuffer()
+      var fileName = 'card_' + Date.now() + '.png'
+      var mime = 'image/png'
       var imageMd5 = createHash('md5').update(imgBuf).digest('hex')
       var formData = new FormData()
       formData.append('advertiser_id', advId)
