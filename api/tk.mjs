@@ -300,30 +300,33 @@ async function uploadCardImage(token, advertiserId, imgBuf) {
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  // Sempre baixar imagem da URL e re-upload como PNG 421x750
-  var imgBuf = null
-  var dbg = 'url=' + (imageUrl || 'none') + ' id=' + (existingImageId || 'none')
-  if (imageUrl) {
+  // Usar image_id existente se disponível (já foi resized no upload_card_image)
+  // Senão, baixar da URL e fazer upload
+  var imageId = existingImageId || null
+  if (!imageId && imageUrl) {
     try {
       var dlRes = await nodeFetch(imageUrl)
-      if (dlRes.ok) imgBuf = Buffer.from(await dlRes.arrayBuffer())
-      dbg += ' dl=' + (dlRes.ok ? imgBuf.length : dlRes.status)
-    } catch(e) { dbg += ' dlErr=' + e.message }
+      if (dlRes.ok) {
+        var imgBuf = Buffer.from(await dlRes.arrayBuffer())
+        if (imgBuf && imgBuf.length > 100) {
+          var uploadRes = await uploadCardImage(token, advertiserId, imgBuf)
+          if (uploadRes.ok) imageId = uploadRes.image_id
+        }
+      }
+    } catch(e) {}
   }
-  if (!imgBuf || imgBuf.length < 100) return { ok: false, error: 'Could not obtain card image (' + dbg + ')' }
-  var uploadRes = await uploadCardImage(token, advertiserId, imgBuf)
-  if (!uploadRes.ok) return uploadRes
+  if (!imageId) return { ok: false, error: 'No card image available' }
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
     portfolio_content: [{
       card_type: 'IMAGE',
-      image_id: uploadRes.image_id,
+      image_id: imageId,
       title: (title || '').substring(0, 54) || 'Shop Now',
       call_to_action: cta || 'SHOP_NOW'
     }]
   }, proxyRaw)
-  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card failed: ' + (portfolioRes.message || '') + ' (img=' + uploadRes.image_id + ')' }
+  if (portfolioRes.code !== 0 || !portfolioRes.data) return { ok: false, error: 'Card failed: ' + (portfolioRes.message || '') + ' (img=' + imageId + ')' }
   return { ok: true, card_id: portfolioRes.data.creative_portfolio_id }
 }
 
