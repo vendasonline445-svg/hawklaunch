@@ -268,30 +268,57 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 }
 
 
-async function uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw) {
-  var res = await tt('/file/image/ad/upload/', token, 'POST', {
-    advertiser_id: advertiserId,
-    upload_type: 'UPLOAD_BY_URL',
-    image_url: imageUrl
-  }, proxyRaw)
-  if (res.code !== 0 || !res.data || !res.data.image_id) return { ok: false, error: 'Image upload failed: ' + (res.message || '') }
-  return { ok: true, image_id: res.data.image_id }
+async function uploadImageResized(token, advertiserId, imgBuf) {
+  var resized = await sharp(imgBuf).resize(421, 750, { fit: 'cover' }).jpeg({ quality: 90 }).toBuffer()
+  var imageMd5 = createHash('md5').update(resized).digest('hex')
+  var formData = new FormData()
+  formData.append('advertiser_id', advertiserId)
+  formData.append('upload_type', 'UPLOAD_BY_FILE')
+  formData.append('image_signature', imageMd5)
+  formData.append('image_file', new Blob([resized], { type: 'image/jpeg' }), 'card.jpg')
+  var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
+    method: 'POST',
+    headers: { 'Access-Token': token },
+    body: formData,
+  })
+  var data = await uploadRes.json()
+  if (data.code !== 0 || !data.data || !data.data.image_id) return { ok: false, error: 'Image upload failed: ' + (data.message || '') }
+  return { ok: true, image_id: data.data.image_id }
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  var imageId = existingImageId || null
-  if (!imageId && imageUrl) {
-    var imgRes = await uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw)
-    if (!imgRes.ok) return imgRes
-    imageId = imgRes.image_id
+  // Sempre baixar imagem, redimensionar para 421x750, e re-upload
+  var imgBuf = null
+  if (existingImageId) {
+    // Buscar URL da imagem existente via search
+    try {
+      var searchRes = await tt('/file/image/ad/search/', token, 'GET', { advertiser_id: advertiserId, image_ids: JSON.stringify([existingImageId]) }, proxyRaw)
+      if (searchRes.code === 0 && searchRes.data && searchRes.data.list && searchRes.data.list[0]) {
+        var imgUrl = searchRes.data.list[0].image_url || searchRes.data.list[0].url
+        if (imgUrl) {
+          var dlRes = await nodeFetch(imgUrl)
+          imgBuf = Buffer.from(await dlRes.arrayBuffer())
+        }
+      }
+    } catch(e) {}
   }
-  if (!imageId) return { ok: false, error: 'No image_id or image_url provided' }
+  if (!imgBuf && imageUrl) {
+    try {
+      var dlRes = await nodeFetch(imageUrl)
+      imgBuf = Buffer.from(await dlRes.arrayBuffer())
+    } catch(e) {
+      return { ok: false, error: 'Failed to download image: ' + e.message }
+    }
+  }
+  if (!imgBuf) return { ok: false, error: 'No image_id or image_url provided' }
+  var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
+  if (!uploadRes.ok) return uploadRes
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
     portfolio_content: [{
       card_type: 'IMAGE',
-      image_id: imageId,
+      image_id: uploadRes.image_id,
       title: (title || '').substring(0, 54) || 'Shop Now',
       call_to_action: cta || 'SHOP_NOW'
     }]
