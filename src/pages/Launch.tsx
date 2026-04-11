@@ -835,6 +835,7 @@ function StepLaunch() {
   const { setStep, selectedAccounts, campaignType } = useAppStore()
   const [launching, setLaunching] = useState(false)
   const abortRef = useRef(false)
+  const logEndRef = useRef<HTMLDivElement>(null)
   const [progress, setProgress] = useState(0)
   const [schedule, setSchedule] = useState('now')
   const [customSchedule, setCustomSchedule] = useState('')
@@ -849,6 +850,7 @@ function StepLaunch() {
 
   function addLog(cat: LogEntry['cat'], msg: string) {
     setLogs(p => [...p, { time: new Date().toLocaleTimeString(), cat, msg }])
+    setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }
 
   const counts = {
@@ -975,19 +977,21 @@ function StepLaunch() {
                   Object.assign(ctaCacheSaved, d.cta_cache)
                 }
                 if (d.logs) d.logs.forEach((l: any) => {
-                  const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
+                  const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                   addLog(cat, l.message)
                 })
-                if (d.errors) {
+                if (d.errors && d.errors.length > 0) {
                   allErrors.push(...d.errors)
+                  d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
                   if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
                     accountNoPermission = true
                   }
                 }
-              } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
+                addLog('OK', 'Campanha ' + (cp+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+              } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
               retryOk = true; break
             } catch(e: any) {
-              addLog('ERROR', 'Fatal: ' + e.message)
+              addLog('ERROR', 'Erro de rede: ' + e.message)
               if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
             }
           }
@@ -1106,17 +1110,19 @@ function StepLaunch() {
               totalResult.adgroups += d.adgroups || 0
               totalResult.ads += d.ads || 0
               if (d.logs) d.logs.forEach((l: any) => {
-                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'
+                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                 addLog(cat, l.message)
               })
-              if (d.errors) {
+              if (d.errors && d.errors.length > 0) {
                 allErrors.push(...d.errors)
+                d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
                 if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
                   accountNoPermission = true
                 }
               }
-            } else { addLog('ERROR', 'API: ' + ((r as any).message || (r as any).error || '?')) }
-          } catch(e: any) { addLog('ERROR', 'Fatal: ' + e.message) }
+              addLog('OK', 'Campanha ' + (cp+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+            } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
+          } catch(e: any) { addLog('ERROR', 'Erro de rede: ' + e.message) }
         }
       }
     } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
@@ -1227,9 +1233,17 @@ function StepLaunch() {
                   const d = r.data as any
                   totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
                   if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
-                  if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
-                  if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
-                } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+                  if (d.logs) d.logs.forEach((l: any) => {
+                    const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                    addLog(cat, l.message)
+                  })
+                  if (d.errors && d.errors.length > 0) {
+                    allErrors.push(...d.errors)
+                    d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
+                    if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true
+                  }
+                  addLog('OK', 'Campanha Smart+ ' + seqCounter + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+                } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
                 retryOk = true; break
               } catch(e: any) {
                 addLog('ERROR', 'Fatal: ' + e.message)
@@ -1257,9 +1271,17 @@ function StepLaunch() {
                 if (r.code === 0 && r.data) {
                   const d = r.data as any
                   totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
-                  if (d.logs) d.logs.forEach((l: any) => { const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : 'INFO'; addLog(cat, l.message) })
-                  if (d.errors) { allErrors.push(...d.errors); if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true }
-                } else { addLog('ERROR', 'API: ' + ((r as any).message || '?')) }
+                  if (d.logs) d.logs.forEach((l: any) => {
+                    const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                    addLog(cat, l.message)
+                  })
+                  if (d.errors && d.errors.length > 0) {
+                    allErrors.push(...d.errors)
+                    d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
+                    if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) accountNoPermission = true
+                  }
+                  addLog('OK', 'Campanha Manual ' + seqCounter + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+                } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
                 retryOk = true; break
               } catch(e: any) {
                 addLog('ERROR', 'Fatal: ' + e.message)
@@ -1320,7 +1342,7 @@ function StepLaunch() {
   // Launch Complete Modal
   const LaunchModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !launching && setShowModal(false)}>
-      <div className="bg-hawk-card border border-hawk-border rounded-2xl w-[700px] max-h-[85vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-hawk-card border border-hawk-border rounded-2xl w-[750px] max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-hawk-border">
           <div className="flex items-center gap-3">
@@ -1364,15 +1386,16 @@ function StepLaunch() {
         </div>
 
         {/* Log entries */}
-        <div className="max-h-[300px] overflow-y-auto px-6 py-2">
+        <div className="flex-1 min-h-0 max-h-[400px] overflow-y-auto px-6 py-2 scroll-smooth">
           {filteredLogs.map((l, i) => (
             <div key={i} className="flex items-start gap-2.5 py-1.5 border-b border-hawk-border/30 last:border-0">
               <span className="text-[10px] text-gray-500 font-mono mt-0.5 flex-shrink-0 w-14">{l.time}</span>
               <span className={'text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ' + catColor(l.cat)}>{l.cat}</span>
-              <span className="text-[11px] text-gray-300 leading-relaxed">{l.msg}</span>
+              <span className="text-[11px] text-gray-300 leading-relaxed break-all">{l.msg}</span>
             </div>
           ))}
           {filteredLogs.length === 0 && <div className="text-center py-4 text-gray-500 text-xs">Nenhum log nesta categoria</div>}
+          <div ref={logEndRef} />
         </div>
 
         {/* TikTok links */}
