@@ -287,24 +287,27 @@ async function uploadImageResized(token, advertiserId, imgBuf) {
 }
 
 async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  // Baixar imagem da URL, redimensionar para 421x750, e upload
-  if (!imageUrl) return { ok: false, error: 'No image_url provided for Display Card' }
-  var imgBuf = null
-  try {
-    var dlRes = await nodeFetch(imageUrl)
-    imgBuf = Buffer.from(await dlRes.arrayBuffer())
-  } catch(e) {
-    return { ok: false, error: 'Failed to download image: ' + e.message }
+  var finalImageId = null
+  // Caminho 1: tem URL → baixar, redimensionar 421x750, re-upload
+  if (imageUrl) {
+    try {
+      var dlRes = await nodeFetch(imageUrl)
+      var imgBuf = Buffer.from(await dlRes.arrayBuffer())
+      if (imgBuf && imgBuf.length > 0) {
+        var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
+        if (uploadRes.ok) finalImageId = uploadRes.image_id
+      }
+    } catch(e) {}
   }
-  if (!imgBuf || imgBuf.length === 0) return { ok: false, error: 'Downloaded image is empty' }
-  var uploadRes = await uploadImageResized(token, advertiserId, imgBuf)
-  if (!uploadRes.ok) return uploadRes
+  // Caminho 2: fallback — usar image_id existente direto (pode já estar 421x750)
+  if (!finalImageId && existingImageId) finalImageId = existingImageId
+  if (!finalImageId) return { ok: false, error: 'No image provided for Display Card' }
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
     portfolio_content: [{
       card_type: 'IMAGE',
-      image_id: uploadRes.image_id,
+      image_id: finalImageId,
       title: (title || '').substring(0, 54) || 'Shop Now',
       call_to_action: cta || 'SHOP_NOW'
     }]
