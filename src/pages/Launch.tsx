@@ -560,6 +560,35 @@ function StepCreative() {
   const [cardEnabled, setCardEnabled] = useState(() => localStorage.getItem('hawklaunch_card_enabled') === 'true')
   const [cardImageUrl, setCardImageUrl] = useState(() => localStorage.getItem('hawklaunch_card_image_url') || '')
   const [cardTitle, setCardTitle] = useState(() => localStorage.getItem('hawklaunch_card_title') || '')
+  const [cardImageId, setCardImageId] = useState(() => localStorage.getItem('hawklaunch_card_image_id') || '')
+  const [cardUploading, setCardUploading] = useState(false)
+  const [cardPreview, setCardPreview] = useState(() => localStorage.getItem('hawklaunch_card_preview') || '')
+
+  async function handleCardImageUpload(file: File) {
+    if (!selectedAccounts[0]) return
+    setCardUploading(true)
+    try {
+      const reader = new FileReader()
+      const base64: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const r = await api.uploadCardImage(selectedAccounts[0].advertiser_id, base64, file.name)
+      if (r.code === 0 && r.data?.image_id) {
+        setCardImageId(r.data.image_id)
+        localStorage.setItem('hawklaunch_card_image_id', r.data.image_id)
+        if (r.data.image_url) { setCardPreview(r.data.image_url); localStorage.setItem('hawklaunch_card_preview', r.data.image_url) }
+        setCardImageUrl('')
+        localStorage.removeItem('hawklaunch_card_image_url')
+      } else {
+        alert('Erro no upload: ' + (r.error || r.message || '?'))
+      }
+    } catch (e: any) {
+      alert('Erro: ' + e.message)
+    }
+    setCardUploading(false)
+  }
 
   return (
     <div className="card animate-fade-in">
@@ -674,11 +703,33 @@ function StepCreative() {
         </div>
         {cardEnabled && (
           <div className="space-y-3">
-            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA. A imagem deve ser uma URL publica (ex: hospedada no Imgur, Cloudinary, etc).</div>
+            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA.</div>
             <div>
-              <label className="label mb-1 block text-[11px]">URL da imagem do card</label>
-              <input className="input text-xs" placeholder="https://i.imgur.com/exemplo.jpg" value={cardImageUrl}
-                onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+              <label className="label mb-1 block text-[11px]">Imagem do card</label>
+              {cardImageId ? (
+                <div className="flex items-center gap-3 p-2 bg-hawk-bg rounded-lg border border-green-500/30">
+                  {cardPreview && <img src={cardPreview} className="w-12 h-12 rounded object-cover" alt="" />}
+                  <div className="flex-1">
+                    <div className="text-[11px] text-green-400">Imagem enviada</div>
+                    <div className="text-[10px] text-gray-500 font-mono truncate">{cardImageId}</div>
+                  </div>
+                  <button className="text-xs text-gray-500 hover:text-red-400" onClick={() => {
+                    setCardImageId(''); setCardPreview(''); localStorage.removeItem('hawklaunch_card_image_id'); localStorage.removeItem('hawklaunch_card_preview')
+                  }}>Remover</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <label className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-hawk-bg border-2 border-dashed border-hawk-border rounded-lg cursor-pointer hover:border-gray-500 ${cardUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <span className="text-sm">{cardUploading ? '...' : '📁'}</span>
+                    <span className="text-xs text-gray-400">{cardUploading ? 'Enviando...' : 'Selecionar imagem'}</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCardImageUpload(f); e.target.value = '' }} />
+                  </label>
+                  <div className="text-[10px] text-gray-500 self-center px-2">ou</div>
+                  <input className="input text-xs flex-1" placeholder="URL da imagem" value={cardImageUrl}
+                    onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+                </div>
+              )}
             </div>
             <div>
               <label className="label mb-1 block text-[11px]">Titulo do card <span className="text-gray-500">(max 54 chars)</span></label>
@@ -979,8 +1030,8 @@ function StepLaunch() {
         optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
         location_ids: getLocationIds(),
         schedule_start: scheduleStart, timezone: getTargetTimezone(),
-        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
-          ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '' }
+        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
           : undefined,
       }
 
@@ -1122,8 +1173,8 @@ function StepLaunch() {
         age_groups: autoTarget ? [] : ageGroups,
         gender: autoTarget ? 'GENDER_UNLIMITED' : gender,
         os: autoTarget ? [] : osTarget,
-        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
-          ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+        display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+          ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
           : undefined,
       }
 
@@ -1230,8 +1281,8 @@ function StepLaunch() {
       pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
-      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
-        ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '' }
+      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '' }
         : undefined,
     }
 
@@ -1246,8 +1297,8 @@ function StepLaunch() {
       optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
       start_paused: startPaused, location_ids: getLocationIds(), schedule_start: scheduleStart, timezone: getTargetTimezone(),
       age_groups: autoTarget ? [] : ageGroups, gender: autoTarget ? 'GENDER_UNLIMITED' : gender, os: autoTarget ? [] : osTarget,
-      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && localStorage.getItem('hawklaunch_card_image_url')
-        ? { image_url: localStorage.getItem('hawklaunch_card_image_url'), title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+      display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+        ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
         : undefined,
     }
 
@@ -1710,6 +1761,35 @@ function ManualStepCreative() {
   const [cardEnabled, setCardEnabled] = useState(() => localStorage.getItem('hawklaunch_card_enabled') === 'true')
   const [cardImageUrl, setCardImageUrl] = useState(() => localStorage.getItem('hawklaunch_card_image_url') || '')
   const [cardTitle, setCardTitle] = useState(() => localStorage.getItem('hawklaunch_card_title') || '')
+  const [cardImageId, setCardImageId] = useState(() => localStorage.getItem('hawklaunch_card_image_id') || '')
+  const [cardUploading, setCardUploading] = useState(false)
+  const [cardPreview, setCardPreview] = useState(() => localStorage.getItem('hawklaunch_card_preview') || '')
+
+  async function handleCardImageUpload(file: File) {
+    if (!selectedAccounts[0]) return
+    setCardUploading(true)
+    try {
+      const reader = new FileReader()
+      const base64: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const r = await api.uploadCardImage(selectedAccounts[0].advertiser_id, base64, file.name)
+      if (r.code === 0 && r.data?.image_id) {
+        setCardImageId(r.data.image_id)
+        localStorage.setItem('hawklaunch_card_image_id', r.data.image_id)
+        if (r.data.image_url) { setCardPreview(r.data.image_url); localStorage.setItem('hawklaunch_card_preview', r.data.image_url) }
+        setCardImageUrl('')
+        localStorage.removeItem('hawklaunch_card_image_url')
+      } else {
+        alert('Erro no upload: ' + (r.error || r.message || '?'))
+      }
+    } catch (e: any) {
+      alert('Erro: ' + e.message)
+    }
+    setCardUploading(false)
+  }
 
   const domainLines = domainList.split('\n').map(l => l.trim()).filter(Boolean)
 
@@ -1837,11 +1917,33 @@ function ManualStepCreative() {
         </div>
         {cardEnabled && (
           <div className="space-y-3">
-            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA. A imagem deve ser uma URL publica (ex: hospedada no Imgur, Cloudinary, etc).</div>
+            <div className="text-[11px] text-gray-400 leading-relaxed">Card exibido abaixo do anuncio com imagem + titulo + CTA.</div>
             <div>
-              <label className="label mb-1 block text-[11px]">URL da imagem do card</label>
-              <input className="input text-xs" placeholder="https://i.imgur.com/exemplo.jpg" value={cardImageUrl}
-                onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+              <label className="label mb-1 block text-[11px]">Imagem do card</label>
+              {cardImageId ? (
+                <div className="flex items-center gap-3 p-2 bg-hawk-bg rounded-lg border border-green-500/30">
+                  {cardPreview && <img src={cardPreview} className="w-12 h-12 rounded object-cover" alt="" />}
+                  <div className="flex-1">
+                    <div className="text-[11px] text-green-400">Imagem enviada</div>
+                    <div className="text-[10px] text-gray-500 font-mono truncate">{cardImageId}</div>
+                  </div>
+                  <button className="text-xs text-gray-500 hover:text-red-400" onClick={() => {
+                    setCardImageId(''); setCardPreview(''); localStorage.removeItem('hawklaunch_card_image_id'); localStorage.removeItem('hawklaunch_card_preview')
+                  }}>Remover</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <label className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-hawk-bg border-2 border-dashed border-hawk-border rounded-lg cursor-pointer hover:border-gray-500 ${cardUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <span className="text-sm">{cardUploading ? '...' : '📁'}</span>
+                    <span className="text-xs text-gray-400">{cardUploading ? 'Enviando...' : 'Selecionar imagem'}</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleCardImageUpload(f); e.target.value = '' }} />
+                  </label>
+                  <div className="text-[10px] text-gray-500 self-center px-2">ou</div>
+                  <input className="input text-xs flex-1" placeholder="URL da imagem" value={cardImageUrl}
+                    onChange={e => { setCardImageUrl(e.target.value); localStorage.setItem('hawklaunch_card_image_url', e.target.value) }} />
+                </div>
+              )}
             </div>
             <div>
               <label className="label mb-1 block text-[11px]">Titulo do card <span className="text-gray-500">(max 54 chars)</span></label>

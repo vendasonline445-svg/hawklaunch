@@ -88,4 +88,9 @@ export var api = {
     method: 'POST',
     body: JSON.stringify({ advertiser_id: advId, ad_id: adId, proxy: proxy || null }),
   }),
+
+  uploadCardImage: (advertiserId: string, base64: string, fileName: string) => request('a=upload_card_image', {
+    method: 'POST',
+    body: JSON.stringify({ advertiser_id: advertiserId, image_base64: base64, file_name: fileName }),
+  }),
 }

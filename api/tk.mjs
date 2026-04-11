@@ -276,15 +276,20 @@ async function uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw) {
   return { ok: true, image_id: res.data.image_id }
 }
 
-async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta) {
-  var imgRes = await uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw)
-  if (!imgRes.ok) return imgRes
+async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
+  var imageId = existingImageId || null
+  if (!imageId && imageUrl) {
+    var imgRes = await uploadImageByUrl(token, advertiserId, imageUrl, proxyRaw)
+    if (!imgRes.ok) return imgRes
+    imageId = imgRes.image_id
+  }
+  if (!imageId) return { ok: false, error: 'No image_id or image_url provided' }
   var portfolioRes = await tt('/creative/portfolio/create/', token, 'POST', {
     advertiser_id: advertiserId,
     creative_portfolio_type: 'CARD',
     portfolio_content: [{
       card_type: 'IMAGE',
-      image_id: imgRes.image_id,
+      image_id: imageId,
       title: (title || '').substring(0, 54) || 'Shop Now',
       call_to_action: cta || 'SHOP_NOW'
     }]
@@ -310,6 +315,42 @@ export default async function handler(req, res) {
     var authHeader = req.headers && req.headers['authorization']
     var token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null) || await getToken()
     if (!token && action !== 'token' && action !== 'test_proxy') return res.status(401).json({ error: 'No token' })
+
+    if (action === 'upload_card_image' && req.method === 'POST') {
+      var body = req.body
+      var advId = body && body.advertiser_id
+      if (!advId || !body.image_base64) return res.status(400).json({ error: 'advertiser_id and image_base64 required' })
+      var imgBuf = Buffer.from(body.image_base64, 'base64')
+      var fileName = body.file_name || 'card.jpg'
+      var ext = fileName.split('.').pop().toLowerCase()
+      var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
+      var mime = mimeMap[ext] || 'image/jpeg'
+      var boundary = '----HawkBoundary' + Date.now() + Math.random().toString(36).substring(2, 8)
+      var parts = []
+      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="advertiser_id"\r\n\r\n' + advId + '\r\n')
+      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="upload_type"\r\n\r\nUPLOAD_BY_FILE\r\n')
+      parts.push('--' + boundary + '\r\nContent-Disposition: form-data; name="image_file"; filename="' + fileName + '"\r\nContent-Type: ' + mime + '\r\n\r\n')
+      var bodyBuf = Buffer.concat([
+        Buffer.from(parts.join('')),
+        imgBuf,
+        Buffer.from('\r\n--' + boundary + '--\r\n')
+      ])
+      try {
+        var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
+          method: 'POST',
+          headers: {
+            'Access-Token': token,
+            'Content-Type': 'multipart/form-data; boundary=' + boundary,
+          },
+          body: bodyBuf,
+        })
+        var uploadData = await uploadRes.json()
+        if (uploadData.code !== 0 || !uploadData.data) return res.json({ code: uploadData.code || -1, error: uploadData.message || 'Upload failed', data: null })
+        return res.json({ code: 0, data: { image_id: uploadData.data.image_id, image_url: uploadData.data.preview_url || '' } })
+      } catch(e) {
+        return res.json({ code: -1, error: e.message, data: null })
+      }
+    }
 
     if (action === 'test_proxy') {
       var rawProxy = (req.body && req.body.proxy) || req.query.proxy || ''
@@ -732,10 +773,10 @@ export default async function handler(req, res) {
 
         // Display Card (interactive add-on)
         var displayCardId = null
-        if (body.display_card && body.display_card.image_url) {
+        if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
           L(advId, 'Creating Display Card...')
           try {
-            var cardRes = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || 'SHOP_NOW')
+            var cardRes = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || 'SHOP_NOW', body.display_card.image_id)
             if (cardRes.ok) {
               displayCardId = cardRes.card_id
               L(advId, '✅ Display Card: ' + displayCardId)
@@ -978,10 +1019,10 @@ export default async function handler(req, res) {
 
         // Display Card (interactive add-on)
         var displayCardIdM = null
-        if (body.display_card && body.display_card.image_url) {
+        if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
           L(advId, 'Creating Display Card...')
           try {
-            var cardResM = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || body.call_to_action || 'SHOP_NOW')
+            var cardResM = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || body.call_to_action || 'SHOP_NOW', body.display_card.image_id)
             if (cardResM.ok) {
               displayCardIdM = cardResM.card_id
               L(advId, '✅ Display Card: ' + displayCardIdM)
