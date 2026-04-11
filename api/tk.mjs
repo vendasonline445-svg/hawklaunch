@@ -1,6 +1,7 @@
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import nodeFetch from 'node-fetch'
 import { createHash } from 'crypto'
+import sharp from 'sharp'
 
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
@@ -321,11 +322,11 @@ export default async function handler(req, res) {
       var body = req.body
       var advId = body && body.advertiser_id
       if (!advId || !body.image_base64) return res.status(400).json({ error: 'advertiser_id and image_base64 required' })
-      var imgBuf = Buffer.from(body.image_base64, 'base64')
-      var fileName = body.file_name || 'card.jpg'
-      var ext = fileName.split('.').pop().toLowerCase()
-      var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
-      var mime = mimeMap[ext] || 'image/jpeg'
+      var rawBuf = Buffer.from(body.image_base64, 'base64')
+      // Auto-resize para 421x750 (tamanho obrigatório do Display Card TikTok)
+      var imgBuf = await sharp(rawBuf).resize(421, 750, { fit: 'cover' }).jpeg({ quality: 90 }).toBuffer()
+      var fileName = (body.file_name || 'card.jpg').replace(/\.\w+$/, '.jpg')
+      var mime = 'image/jpeg'
       var imageMd5 = createHash('md5').update(imgBuf).digest('hex')
       var formData = new FormData()
       formData.append('advertiser_id', advId)
