@@ -299,11 +299,10 @@ async function uploadCardImage(token, advertiserId, imgBuf) {
   return { ok: true, image_id: data.data.image_id, image_url: data.data.image_url || '' }
 }
 
-async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, existingImageId) {
-  // Usar image_id existente se disponível (já foi resized no upload_card_image)
-  // Senão, baixar da URL e fazer upload
-  var imageId = existingImageId || null
-  if (!imageId && imageUrl) {
+async function createDisplayCard(token, advertiserId, proxyRaw, imageUrl, title, cta, _existingImageId) {
+  // Sempre re-upload por conta — image_id de outra conta dá "Insufficient permissions"
+  var imageId = null
+  if (imageUrl) {
     try {
       var dlRes = await nodeFetch(imageUrl)
       if (dlRes.ok) {

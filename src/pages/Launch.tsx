@@ -807,14 +807,14 @@ function StepStructure() {
     <div className="grid grid-cols-2 gap-4 mb-4">
       <div><label className="label mb-1.5 block">Campanhas por conta</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_camps_per_account') || (localStorage.setItem('hawklaunch_camps_per_account', '5'), '5')} min={1} max={20} onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)}/></div>
       <div><label className="label mb-1.5 block">Anúncios por código Spark</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_ads_per_code') || (localStorage.setItem('hawklaunch_ads_per_code', '2'), '2')} min={1} max={10} onChange={e => localStorage.setItem('hawklaunch_ads_per_code', e.target.value)}/></div>
-      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="ADD_BILLING">Add Payment Info</option></select></div>
+      <div><label className="label mb-1.5 block">Evento de otimização</label><select className="select" defaultValue={localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING'} onChange={e => localStorage.setItem('hawklaunch_opt_event', e.target.value)}><option value="SHOPPING">Purchase</option><option value="INITIATE_ORDER">Initiate Checkout</option><option value="ON_WEB_CART">Add to Cart</option><option value="ON_WEB_DETAIL">View Content</option><option value="ADD_BILLING">Add Payment Info</option></select></div>
     </div>
 
     <div className="bg-purple-500/8 border border-purple-500/20 rounded-lg p-3 flex gap-3 mb-4"><span className="text-base">💡</span><div className="text-[12px] text-gray-300">Smart+ usa orçamento automático no nível da campanha. Estrutura: <strong>1 campanha → 1 ad group → N ads</strong> por conta.</div></div>
 
     <div className="grid grid-cols-2 gap-4 mb-4">
-      <div><label className="label mb-1.5 block">Budget diário (BRL)</label><input className="input" type="number" defaultValue={80} onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)}/></div>
-      <div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div>
+      <div><label className="label mb-1.5 block">Budget diário (BRL)</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_budget') || '80'} onChange={e => localStorage.setItem('hawklaunch_budget', e.target.value)}/></div>
+      <div><label className="label mb-1.5 block">Target CPA</label><input className="input" type="number" defaultValue={localStorage.getItem('hawklaunch_target_cpa') || ''} placeholder="55" onChange={e => localStorage.setItem('hawklaunch_target_cpa', e.target.value)}/></div>
     </div>
 
     <ToggleRow title="Randomizar orçamento" desc="Valor aleatório"/>
