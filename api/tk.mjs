@@ -923,11 +923,14 @@ export default async function handler(req, res) {
               var adRes, adOk = false
               for (var adAttempt = 0; adAttempt < 3; adAttempt++) {
                 try {
+                  adPayload.request_id = makeRequestId()
                   adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
-                  if (adRes.code !== 0 && adRes.message && adRes.message.includes('concurrent')) {
-                    L(advId, '⏳ Concurrent limit, retry...')
-                    await rndDelay(1500, 2500)
-                    adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+                  if (adRes.code !== 0 && adRes.message && (adRes.message.includes('concurrent') || adRes.message.includes('does not exist'))) {
+                    if (adAttempt < 2) {
+                      L(advId, '⏳ ' + (adRes.message.includes('concurrent') ? 'Concurrent limit' : 'Transient error') + ', retry ' + (adAttempt+2) + '/3...')
+                      await rndDelay(2000 + adAttempt*2000, 4000 + adAttempt*2000)
+                      continue
+                    }
                   }
                   adOk = true; break
                 } catch(e) {
@@ -1278,18 +1281,28 @@ export default async function handler(req, res) {
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               if (displayCardIdM) creativeV.card_id = displayCardIdM
-              var adPayloadV = { request_id: makeRequestId(), advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
+              var adPayloadV = { advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
               L(advId, 'Ad vídeo ' + (v+1) + '/' + videoIds.length + '...')
-              var adResV
-              try {
-                adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
-                if (adResV.code !== 0 && adResV.message && adResV.message.includes('concurrent')) {
-                  await rndDelay(8000, 12000)
+              var adResV, adOkV = false
+              for (var adAttemptV = 0; adAttemptV < 3; adAttemptV++) {
+                try {
+                  adPayloadV.request_id = makeRequestId()
                   adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
+                  if (adResV.code !== 0 && adResV.message && (adResV.message.includes('concurrent') || adResV.message.includes('does not exist'))) {
+                    if (adAttemptV < 2) {
+                      L(advId, '⏳ ' + (adResV.message.includes('concurrent') ? 'Concurrent limit' : 'Transient error') + ', retry ' + (adAttemptV+2) + '/3...')
+                      await rndDelay(2000 + adAttemptV*2000, 4000 + adAttemptV*2000)
+                      continue
+                    }
+                  }
+                  adOkV = true; break
+                } catch(e) {
+                  L(advId, '❌ Ad network error: ' + e.message)
+                  if (adAttemptV < 2) { L(advId, '🔄 Ad retry ' + (adAttemptV+2) + '/3...'); await rndDelay(3000 + adAttemptV*3000, 6000 + adAttemptV*3000) }
                 }
-              } catch(e) {
-                L(advId, '❌ Ad network error: ' + e.message)
-                results.errors.push({ account: advId, step: 'ad', error: e.message })
+              }
+              if (!adOkV) {
+                results.errors.push({ account: advId, step: 'ad', error: 'network error after 3 retries' })
                 continue
               }
               if (adResV.code !== 0) {
