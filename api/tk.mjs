@@ -244,7 +244,7 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
   return { ok: false, error: lastError + ' (3 tentativas)' }
 }
 
-var WANTED_CTAS = ['visit store','shop now','learn more','sign up','view now','read more','check it out','apply now','book now','order now','watch now','download','contact us','play game','get quote','install now','get showtimes','listen now','interested','subscribe','get tickets now','experience now','pre-order now','donate now','buy it now','get yours now','shop today','order today','shop','order yours today','watch live','view more','join now']
+var WANTED_CTAS = ['view now','read more','interested','visit store','order now','shop now','learn more']
 
 async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, promotionType) {
   var ctaObj = objectiveType || 'WEB_CONVERSIONS'
@@ -1106,6 +1106,8 @@ export default async function handler(req, res) {
             adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
             placement_type: 'PLACEMENT_TYPE_NORMAL',
             placements: ['PLACEMENT_TIKTOK'],
+            tiktok_subplacements: ['IN_FEED'],
+            inventory_filter_enabled: true,
             billing_event: body.billing_event || 'OCPM',
             optimization_goal: body.optimization_goal || 'CONVERT',
             schedule_type: 'SCHEDULE_FROM_NOW',
@@ -1277,7 +1279,6 @@ export default async function handler(req, res) {
                 call_to_action: body.call_to_action || 'SHOP_NOW',
                 landing_page_url: accountDomain,
                 display_name: body.display_name || '',
-                deeplink_type: 'NORMAL',
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               if (displayCardIdM) creativeV.card_id = displayCardIdM
