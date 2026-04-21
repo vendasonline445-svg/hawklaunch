@@ -40,9 +40,9 @@ export var api = {
   getVideos: (advId: string) => request('a=videos&advertiser_id=' + advId),
   getCampaigns: (advId: string) => request('a=campaign_get&advertiser_id=' + advId),
 
-  authorizeSpark: (advertiserId: string, authCode: string) => request('a=spark_authorize', {
+  authorizeSpark: (advertiserId: string, authCode: string, proxy?: string) => request('a=spark_authorize', {
     method: 'POST',
-    body: JSON.stringify({ advertiser_id: advertiserId, auth_code: authCode }),
+    body: JSON.stringify({ advertiser_id: advertiserId, auth_code: authCode, ...(proxy ? { proxy } : {}) }),
   }),
 
   launchSmart: (payload: any) => request('a=launch_smart', {

@@ -766,6 +766,8 @@ export default async function handler(req, res) {
 
     if (action === 'launch_smart' && req.method === 'POST') {
       var body = req.body
+      var testMode = !!body.test_mode
+      var preAuthSparks = body.pre_authorized_sparks || {}
       var results = { campaigns: 0, adgroups: 0, ads: 0, spark_authorized: 0, cta_created: 0, errors: [], logs: [] }
       var sparkCodes = body.spark_codes || []
       var sparkAuthCache = {}
@@ -802,6 +804,13 @@ export default async function handler(req, res) {
         var noPermission = false
         for (var s = 0; s < codesForAccount.length; s++) {
           var code = codesForAccount[s]
+          // test_mode: sparks já autorizados pelo frontend — pula chamada à API
+          if (testMode && preAuthSparks[code]) {
+            sparkAuthCache[advId][code] = { ok: true, identity_id: preAuthSparks[code].identity_id, item_id: preAuthSparks[code].item_id }
+            L(advId, '✅ (pre-auth) spark ' + (s+1) + '/' + codesForAccount.length)
+            results.spark_authorized++
+            continue
+          }
           L(advId, 'Spark ' + (s+1) + '/' + codesForAccount.length + ': authorize...')
           try {
             var sr = await authorizeSpark(token, advId, code, accountProxy)
@@ -869,7 +878,7 @@ export default async function handler(req, res) {
         var pixelId = body.pixel_id || null
 
         // Ruído comportamental: "olha o dashboard" antes de começar a criar
-        await exploreNoise(token, advId, accountProxy, L)
+        if (!testMode) await exploreNoise(token, advId, accountProxy, L)
 
         if (!pixelId) {
           try {
@@ -937,7 +946,8 @@ export default async function handler(req, res) {
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
           // Tempo "humano" entre criar campanha e configurar adgroup (lê targeting, budget, bid)
-          await humanDelay(3500, 9000)
+          if (testMode) await rndDelay(400, 1200)
+          else await humanDelay(3500, 9000)
 
           var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
@@ -993,7 +1003,8 @@ export default async function handler(req, res) {
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
           // Tempo humano entre adgroup e primeiro ad (escolhe creative, escreve texto, preview)
-          await humanDelay(5000, 12000)
+          if (testMode) await rndDelay(400, 1200)
+          else await humanDelay(5000, 12000)
 
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
@@ -1022,7 +1033,10 @@ export default async function handler(req, res) {
                 adPayload.interactive_add_on_list = [{ card_id: displayCardId }]
               }
               // Tempo humano entre ads do mesmo adgroup (troca creative/texto)
-              if (c > 0 || a > 0) await humanDelay(2500, 7000)
+              if (c > 0 || a > 0) {
+                if (testMode) await rndDelay(200, 600)
+                else await humanDelay(2500, 7000)
+              }
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes, adOk = false
               for (var adAttempt = 0; adAttempt < 3; adAttempt++) {

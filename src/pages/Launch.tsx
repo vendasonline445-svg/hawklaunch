@@ -927,6 +927,9 @@ function StepLaunch() {
   const [autoAppeal, setAutoAppeal] = useState(() => localStorage.getItem('hawklaunch_auto_appeal') !== 'false')
   const [result, setResult] = useState<any>(null)
   const [showModal, setShowModal] = useState(false)
+  const [testMode, setTestMode] = useState(false)
+  const [testBudget, setTestBudget] = useState(() => parseInt(localStorage.getItem('hawklaunch_test_budget') || '50'))
+  const sparkCodeCount = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').filter((l: string) => l.trim()).length
 
   // Log system with categories
   type LogEntry = { time: string; cat: 'INFO'|'OK'|'ERROR'|'WARN'|'DEBUG'; msg: string }
@@ -1036,6 +1039,8 @@ function StepLaunch() {
       await launchQueue()
     } else if (campaignType === 'manual') {
       await launchManual()
+    } else if (testMode) {
+      await launchSmartTest()
     } else {
       await launchSmart()
     }
@@ -1289,6 +1294,138 @@ function StepLaunch() {
     if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
   }
 
+  async function launchSmartTest() {
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter(Boolean)
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter(Boolean)
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
+    const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
+
+    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
+    if (!destUrl && domainList.length === 0) { addLog('ERROR', 'URL de destino não configurada!'); return }
+
+    addLog('INFO', '🧪 MODO TESTE CTV')
+    addLog('INFO', sparkCodes.length + ' sparks × ' + selectedAccounts.length + ' conta(s) → ' + sparkCodes.length + ' ads/conta em 1 adgroup')
+    addLog('DEBUG', 'Budget: R$' + testBudget + '/dia · CPA: Auto · 1 camp/conta')
+    if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
+    else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
+    setProgress(5)
+
+    const scheduleStart = buildScheduleStart()
+    localStorage.removeItem('hawklaunch_cta_cache')
+    const ctaCacheSaved: Record<string, string> = {}
+    let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+    let allErrors: any[] = []
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
+
+    try {
+      for (let ai = 0; ai < selectedAccounts.length; ai++) {
+        const acc = selectedAccounts[ai]
+        addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
+
+        // Pré-autorizar todos os sparks para esta conta (frontend sequencial, sem limite de timeout)
+        addLog('INFO', '🔐 Pré-autorizando ' + sparkCodes.length + ' sparks...')
+        const proxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+        const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
+        let accountNoPermission = false
+
+        for (let si = 0; si < sparkCodes.length; si++) {
+          if (abortRef.current) break
+          const code = sparkCodes[si]
+          addLog('DEBUG', 'Spark ' + (si+1) + '/' + sparkCodes.length + '...')
+          try {
+            const r = await api.authorizeSpark(acc.advertiser_id, code, proxy)
+            if ((r as any).ok) {
+              preAuthorizedSparks[code] = { identity_id: (r as any).identity_id, item_id: (r as any).item_id }
+              addLog('OK', '✅ Spark ' + (si+1) + ': identity=' + (r as any).identity_id)
+            } else {
+              addLog('WARN', '⚠️ Spark ' + (si+1) + ': ' + ((r as any).error || '?'))
+              allErrors.push({ account: acc.advertiser_id, step: 'spark', error: (r as any).error })
+              if ((r as any).permanent) { accountNoPermission = true; break }
+            }
+          } catch(e: any) {
+            addLog('ERROR', '❌ Spark ' + (si+1) + ': ' + e.message)
+            allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
+          }
+          setProgress(Math.round(5 + ((ai * sparkCodes.length + si + 1) / (selectedAccounts.length * sparkCodes.length) * 40)))
+        }
+
+        if (accountNoPermission) { addLog('WARN', '⛔ Sem permissão — conta ignorada'); continue }
+        const authorizedCount = Object.keys(preAuthorizedSparks).length
+        if (authorizedCount === 0) { addLog('ERROR', '❌ Nenhum spark autorizado — pulando'); continue }
+        addLog('INFO', '✅ ' + authorizedCount + '/' + sparkCodes.length + ' sparks autorizados')
+
+        // Criar campanha/adgroup/ads via backend (sparks já autorizados — request rápida)
+        setProgress(Math.round(45 + ((ai / selectedAccounts.length) * 50)))
+        const singlePayload = {
+          accounts: [acc],
+          campaign_name: 'TESTE ' + offerName,
+          adgroup_name: 'AG TESTE ' + offerName,
+          ad_name: 'TESTE ' + offerName,
+          spark_codes: Object.keys(preAuthorizedSparks),
+          rotation: false,
+          campaigns_per_account: 1,
+          ads_per_code: 1,
+          landing_page_url: destUrl,
+          domain_list: domainList,
+          cta_cache: ctaCacheSaved,
+          start_paused: startPaused,
+          ad_texts: adTexts,
+          budget: testBudget,
+          target_cpa: undefined,
+          pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+          optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+          location_ids: getLocationIds(),
+          schedule_start: scheduleStart,
+          timezone: getTargetTimezone(),
+          proxy_list: proxyList,
+          account_index: ai,
+          test_mode: true,
+          pre_authorized_sparks: preAuthorizedSparks,
+          display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+            ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: 'LEARN_MORE' }
+            : undefined,
+        }
+
+        let retryOk = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await api.launchSmart(singlePayload)
+            if (r.code === 0 && r.data) {
+              const d = r.data as any
+              totalResult.campaigns += d.campaigns || 0
+              totalResult.adgroups += d.adgroups || 0
+              totalResult.ads += d.ads || 0
+              if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
+              if (d.logs) d.logs.forEach((l: any) => {
+                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                addLog(cat, l.message)
+              })
+              if (d.errors && d.errors.length > 0) {
+                allErrors.push(...d.errors)
+                d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?')))
+              }
+              addLog('OK', 'Conta ' + (ai+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+            } else { addLog('ERROR', 'API: ' + JSON.stringify(r).substring(0, 300)) }
+            retryOk = true; break
+          } catch(e: any) {
+            addLog('ERROR', 'Erro de rede: ' + e.message)
+            if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
+          }
+        }
+        if (!retryOk) addLog('ERROR', '❌ Conta ' + (ai+1) + ' falhou após 3 tentativas')
+      }
+    } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
+
+    setProgress(100)
+    setResult(totalResult)
+    addLog('OK', '🧪 TESTE COMPLETO! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' ads')
+    if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
+  }
+
   async function launchQueue() {
     const smartCount = parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '0')
     const manualCount = parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '0')
@@ -1495,9 +1632,9 @@ function StepLaunch() {
   ] : [
     { ok: true, t: 'Conectado ao TikTok' },
     { ok: selectedAccounts.length > 0, t: selectedAccounts.length + ' conta(s) selecionada(s)' },
-    { ok: true, t: 'Tipo: ' + campaignType },
-    { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados' },
-    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim(), t: 'URL de destino configurada' },
+    { ok: true, t: testMode ? '🧪 Modo Teste CTV — ' + sparkCodeCount + ' sparks/conta · 1 adgroup · R$' + testBudget + '/dia' : 'Smart+ — Modo Escala' },
+    { ok: !!(localStorage.getItem('hawklaunch_spark_codes') || '').trim(), t: 'Spark Codes configurados (' + sparkCodeCount + ')' },
+    { ok: !!(localStorage.getItem('hawklaunch_dest_url') || '').trim() || !!(localStorage.getItem('hawklaunch_domain_list') || '').trim(), t: 'URL de destino configurada' },
     { ok: true, t: (localStorage.getItem('hawklaunch_proxy_list') || '').trim() ? '🛡️ Proxy: ' + (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').filter((l: string) => l.trim()).length + ' proxy(ies)' : '⚠️ Sem proxy (IP da Vercel)' },
   ]
 
@@ -1646,6 +1783,41 @@ function StepLaunch() {
       </div>
     )}
 
+    {/* Modo Teste CTV toggle — apenas Smart+ */}
+    {campaignType === 'smart-spark' && (
+      <div className={`p-4 border rounded-xl mb-4 transition-colors ${testMode ? 'border-amber-500/40 bg-amber-500/5' : 'border-hawk-border bg-hawk-input'}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold">🧪 Modo Teste CTV</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">teste</span>
+            </div>
+            <div className="text-[11px] text-gray-500 mt-1">
+              {testMode
+                ? sparkCodeCount > 0
+                  ? '1 camp/conta · ' + sparkCodeCount + ' sparks em 1 adgroup (' + sparkCodeCount + ' ads) · R$' + testBudget + '/dia sem meta CPA'
+                  : '1 camp/conta · todos os sparks em 1 adgroup · sem meta CPA'
+                : 'Ativo: modo escala — ' + (parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')) + ' camp/conta · 1 spark rotacionado'}
+            </div>
+          </div>
+          <div className={`toggle ${testMode ? 'on' : ''}`} onClick={() => setTestMode(!testMode)}/>
+        </div>
+        {testMode && (
+          <div className="mt-3 pt-3 border-t border-amber-500/20 flex items-center gap-4">
+            <div>
+              <label className="label mb-1 block text-[11px]">Budget de teste (BRL/dia)</label>
+              <input className="input text-sm w-28" type="number" min={10} value={testBudget}
+                onChange={e => { const v = parseInt(e.target.value) || 50; setTestBudget(v); localStorage.setItem('hawklaunch_test_budget', String(v)) }} />
+            </div>
+            <div className="text-[11px] text-gray-500 leading-relaxed">
+              Rec: 20× CPA esperado · sem meta de CPA<br/>
+              KPI: hook rate (3s view%) · aguardar 72h sem tocar
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+
     {/* Criar pausadas toggle */}
     <div className="flex items-center justify-between p-3 bg-hawk-input border border-hawk-border rounded-lg mb-4">
       <div>
@@ -1667,10 +1839,10 @@ function StepLaunch() {
     {/* Launch button */}
     <div className="text-center py-6">
       <button onClick={launch} disabled={launching || !selectedAccounts.length || checklist.some(c => !c.ok)}
-        className="px-12 py-4 bg-gradient-to-r from-hawk-accent to-orange-400 text-white rounded-full text-lg font-bold shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-        {launching ? '⏳ Lançando...' : '🚀 LANÇAR CAMPANHAS'}
+        className={`px-12 py-4 text-white rounded-full text-lg font-bold hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${testMode && campaignType === 'smart-spark' ? 'bg-gradient-to-r from-amber-500 to-yellow-400 shadow-[0_8px_40px_rgba(245,158,11,0.4)] hover:shadow-[0_12px_50px_rgba(245,158,11,0.6)]' : 'bg-gradient-to-r from-hawk-accent to-orange-400 shadow-[0_8px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_12px_50px_rgba(249,115,22,0.6)]'}`}>
+        {launching ? '⏳ Lançando...' : testMode && campaignType === 'smart-spark' ? '🧪 TESTAR CRIATIVOS' : '🚀 LANÇAR CAMPANHAS'}
       </button>
-      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'queue' ? 'Fila: ' + queueSmartCount + ' Smart+ + ' + queueManualCount + ' Manual' : campaignType === 'manual' ? 'Campanha Manual' : 'Smart+ Spark Ads'}</p>
+      <p className="mt-3 text-xs text-gray-500">{selectedAccounts.length} conta(s) — {campaignType === 'queue' ? 'Fila: ' + queueSmartCount + ' Smart+ + ' + queueManualCount + ' Manual' : campaignType === 'manual' ? 'Campanha Manual' : testMode ? '🧪 Teste CTV · ' + sparkCodeCount + ' sparks/conta · R$' + testBudget + '/dia' : 'Smart+ Modo Escala'}</p>
     </div>
 
     {/* Last result summary */}
