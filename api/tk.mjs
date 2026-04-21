@@ -1438,46 +1438,59 @@ export default async function handler(req, res) {
               results.errors.push({ account: advId, step: 'cta', error: ctaResult.error })
             }
 
-            var acoPayload = {
-              advertiser_id: advId,
-              adgroup_id: adgroupId,
-              media_info_list: mediaInfoList,
-              title_list: titleList,
-              landing_page_urls: [{ landing_page_url: accountDomain }],
-              common_material: {
-                ad_name: (body.ad_name || campPayload.campaign_name),
-              },
+            // ACO tem limite de 30 vídeos por ad — divide em chunks se exceder
+            var ACO_MAX = 30
+            var acoChunks = []
+            for (var chkStart = 0; chkStart < mediaInfoList.length; chkStart += ACO_MAX) {
+              acoChunks.push(mediaInfoList.slice(chkStart, chkStart + ACO_MAX))
             }
-            if (ctaResult.ok) {
-              acoPayload.common_material.call_to_action_id = ctaResult.call_to_action_id
-            } else {
-              acoPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
-            }
-            if (displayCardIdM) {
-              acoPayload.card_list = [{ card_id: displayCardIdM }]
-            }
+            if (acoChunks.length > 1) L(advId, '⚠️ ' + mediaInfoList.length + ' vídeos > limite ACO de 30 → dividindo em ' + acoChunks.length + ' ads no mesmo adgroup')
 
-            L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
-            if (!testModeM) await humanDelay(2500, 6000)
-            var adResM
-            try {
-              adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
-              if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
-                await humanDelay(10000, 18000)
-                adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+            for (var cki = 0; cki < acoChunks.length; cki++) {
+              var chunkMedia = acoChunks[cki]
+              var chunkSuffix = acoChunks.length > 1 ? ' ' + (cki+1) + '/' + acoChunks.length : ''
+              var acoPayload = {
+                advertiser_id: advId,
+                adgroup_id: adgroupId,
+                media_info_list: chunkMedia,
+                title_list: titleList,
+                landing_page_urls: [{ landing_page_url: accountDomain }],
+                common_material: {
+                  ad_name: (body.ad_name || campPayload.campaign_name) + chunkSuffix,
+                },
               }
-            } catch(e) {
-              L(advId, '❌ ACO Ad network error: ' + e.message)
-              results.errors.push({ account: advId, step: 'ad', error: e.message })
-              continue
-            }
-            if (adResM.code !== 0) {
-              L(advId, '❌ ACO Ad: ' + adResM.message)
-              results.errors.push({ account: advId, step: 'ad', error: adResM.message })
-            } else {
-              L(advId, '✅ Smart Creative criado | camp=' + campaignId + ' ag=' + adgroupId)
-              results.ads++
-              results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, campaign_name: campPayload.campaign_name })
+              if (ctaResult.ok) {
+                acoPayload.common_material.call_to_action_id = ctaResult.call_to_action_id
+              } else {
+                acoPayload.call_to_action_list = [{ call_to_action: body.call_to_action || 'SHOP_NOW' }]
+              }
+              if (displayCardIdM) {
+                acoPayload.card_list = [{ card_id: displayCardIdM }]
+              }
+
+              L(advId, 'Smart Creative' + chunkSuffix + ': ' + chunkMedia.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
+              if (!testModeM) await humanDelay(2500, 6000)
+              else if (cki > 0) await rndDelay(1500, 3000)
+              var adResM
+              try {
+                adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+                if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
+                  await humanDelay(10000, 18000)
+                  adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
+                }
+              } catch(e) {
+                L(advId, '❌ ACO Ad' + chunkSuffix + ' network error: ' + e.message)
+                results.errors.push({ account: advId, step: 'ad', error: e.message })
+                continue
+              }
+              if (adResM.code !== 0) {
+                L(advId, '❌ ACO Ad' + chunkSuffix + ': ' + adResM.message)
+                results.errors.push({ account: advId, step: 'ad', error: adResM.message })
+              } else {
+                L(advId, '✅ Smart Creative' + chunkSuffix + ' criado | camp=' + campaignId + ' ag=' + adgroupId)
+                results.ads++
+                results.created.push({ account: advId, campaign_id: campaignId, adgroup_id: adgroupId, campaign_name: campPayload.campaign_name })
+              }
             }
           } else {
             // Library video mode (CUSTOMIZED_USER / TT_USER)
