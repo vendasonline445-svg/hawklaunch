@@ -93,4 +93,9 @@ export var api = {
     method: 'POST',
     body: JSON.stringify({ advertiser_id: advertiserId, image_base64: base64, file_name: fileName }),
   }),
+
+  testAddAds: (payload: any) => request('a=test_add_ads', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
 }

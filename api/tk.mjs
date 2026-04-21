@@ -905,6 +905,8 @@ export default async function handler(req, res) {
             L(advId, '❌ Display Card error: ' + e.message)
           }
         }
+        // Retorna display_card_id para o frontend usar nos batches seguintes
+        if (testMode) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardId }
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
@@ -1074,6 +1076,90 @@ export default async function handler(req, res) {
               }
             }
           }
+        }
+      }
+
+      return res.json({ code: 0, data: results })
+    }
+
+    // Adiciona ads a um adgroup já existente (Smart+) — usado em batches pelo Modo Teste CTV
+    if (action === 'test_add_ads' && req.method === 'POST') {
+      var body = req.body
+      var results = { ads: 0, errors: [], logs: [] }
+      var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
+
+      var advId = body.advertiser_id
+      var adgroupId = body.adgroup_id
+      var ctaId = body.cta_id || null
+      var displayCardId = body.display_card_id || null
+      var sparkCodes = body.spark_codes || []
+      var preAuthSparks = body.pre_authorized_sparks || {}
+      var adName = body.ad_name || 'TESTE'
+      var adTexts = body.ad_texts || ['Shop now']
+      var landingPageUrl = body.landing_page_url || ''
+
+      if (!advId || !adgroupId) return res.status(400).json({ error: 'advertiser_id e adgroup_id obrigatórios' })
+
+      var proxyList = parseProxyList(body.proxy_list || [])
+      var accountIndex = body.account_index != null ? body.account_index : 0
+      var rawAccountProxy = proxyForAccount(proxyList, accountIndex)
+      var accountProxy = stickifyProxy(rawAccountProxy, advId)
+
+      if (accountProxy) {
+        L('system', '🛡️ Proxy (sticky): ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+      }
+
+      for (var c = 0; c < sparkCodes.length; c++) {
+        var code = sparkCodes[c]
+        var sd = preAuthSparks[code]
+        if (!sd) { L(advId, '⚠️ Spark ' + (c+1) + ' not pre-authorized'); results.errors.push({ account: advId, step: 'ad', error: 'not pre-authorized: ' + code }); continue }
+
+        var adSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+        var adPayload = {
+          request_id: makeRequestId(),
+          advertiser_id: advId,
+          adgroup_id: adgroupId,
+          ad_name: adName + ' ' + adSuffix,
+          creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
+          ad_text_list: adTexts.map(function(t) { return { ad_text: t } }),
+          landing_page_url_list: [{ landing_page_url: landingPageUrl }],
+        }
+        if (ctaId) {
+          adPayload.ad_configuration = { call_to_action_id: ctaId }
+        } else {
+          adPayload.call_to_action_list = [{ call_to_action: 'SHOP_NOW' }]
+        }
+        if (displayCardId) {
+          adPayload.interactive_add_on_list = [{ card_id: displayCardId }]
+        }
+
+        L(advId, 'Ad ' + (c+1) + '/' + sparkCodes.length + '...')
+        var adRes, adOk = false
+        for (var adAttempt = 0; adAttempt < 3; adAttempt++) {
+          try {
+            adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
+            if (adRes.code !== 0 && adRes.message && (adRes.message.includes('concurrent') || adRes.message.includes('does not exist'))) {
+              if (adAttempt < 2) {
+                L(advId, '⏳ ' + (adRes.message.includes('concurrent') ? 'Concurrent limit' : 'Transient error') + ', retry ' + (adAttempt+2) + '/3...')
+                await rndDelay(3000 + adAttempt*4000, 7000 + adAttempt*4000)
+                adPayload.request_id = makeRequestId()
+                continue
+              }
+            }
+            adOk = true; break
+          } catch(e) {
+            L(advId, '❌ Ad network error: ' + e.message)
+            if (adAttempt < 2) { L(advId, '🔄 Ad retry ' + (adAttempt+2) + '/3...'); await rndDelay(3000 + adAttempt*3000, 6000 + adAttempt*3000) }
+          }
+        }
+        if (!adOk) { results.errors.push({ account: advId, step: 'ad', error: 'network error after 3 retries' }); continue }
+        if (adRes.code !== 0) {
+          L(advId, '❌ Ad: ' + adRes.message)
+          results.errors.push({ account: advId, step: 'ad', error: adRes.message })
+        } else {
+          var adId = adRes.data.smart_plus_ad_id || '?'
+          L(advId, '✅ Ad ' + (c+1) + ' | ag=' + adgroupId + ' ad=' + adId)
+          results.ads++
         }
       }
 

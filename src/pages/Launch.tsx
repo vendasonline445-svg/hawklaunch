@@ -1360,14 +1360,23 @@ function StepLaunch() {
         if (authorizedCount === 0) { addLog('ERROR', '❌ Nenhum spark autorizado — pulando'); continue }
         addLog('INFO', '✅ ' + authorizedCount + '/' + sparkCodes.length + ' sparks autorizados')
 
-        // Criar campanha/adgroup/ads via backend (sparks já autorizados — request rápida)
+        // Batch para evitar timeout Vercel 60s: primeiro batch cria camp+ag+10 ads,
+        // batches seguintes adicionam 15 ads por chamada ao adgroup já existente
+        const FIRST_BATCH = 10
+        const BATCH_SIZE = 15
+        const authorizedCodes = Object.keys(preAuthorizedSparks)
+        const firstBatchCodes = authorizedCodes.slice(0, FIRST_BATCH)
+        const remainingCodes = authorizedCodes.slice(FIRST_BATCH)
+
         setProgress(Math.round(45 + ((ai / selectedAccounts.length) * 50)))
+        addLog('INFO', '🏗️ Batch 1/' + (1 + Math.ceil(remainingCodes.length / BATCH_SIZE)) + ': criando camp+ag+' + firstBatchCodes.length + ' ads...')
+
         const singlePayload = {
           accounts: [acc],
           campaign_name: 'TESTE ' + offerName,
           adgroup_name: 'AG TESTE ' + offerName,
           ad_name: 'TESTE ' + offerName,
-          spark_codes: Object.keys(preAuthorizedSparks),
+          spark_codes: firstBatchCodes,
           rotation: false,
           campaigns_per_account: 1,
           ads_per_code: 1,
@@ -1392,6 +1401,10 @@ function StepLaunch() {
             : undefined,
         }
 
+        let adgroupId: string | null = null
+        let ctaId: string | null = null
+        let displayCardId: string | null = null
+
         let retryOk = false
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
@@ -1410,7 +1423,11 @@ function StepLaunch() {
                 allErrors.push(...d.errors)
                 d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?')))
               }
-              addLog('OK', 'Conta ' + (ai+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+              // Captura IDs para os batches seguintes
+              if (d.created && d.created.length > 0) adgroupId = d.created[0].adgroup_id || null
+              ctaId = d.cta_cache?.[acc.advertiser_id] || null
+              displayCardId = d.display_card_ids?.[acc.advertiser_id] || null
+              addLog('OK', 'Batch 1: ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads | ag=' + (adgroupId || '?'))
             } else { addLog('ERROR', 'API: ' + JSON.stringify(r).substring(0, 300)) }
             retryOk = true; break
           } catch(e: any) {
@@ -1418,7 +1435,51 @@ function StepLaunch() {
             if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
           }
         }
-        if (!retryOk) addLog('ERROR', '❌ Conta ' + (ai+1) + ' falhou após 3 tentativas')
+        if (!retryOk) { addLog('ERROR', '❌ Conta ' + (ai+1) + ' falhou após 3 tentativas'); continue }
+
+        // Batches adicionais: adiciona os ads restantes ao adgroup já criado
+        if (remainingCodes.length > 0 && adgroupId) {
+          const accountDomain = domainList.length > 0 ? domainList[ai % domainList.length] : destUrl
+          const totalBatches = 1 + Math.ceil(remainingCodes.length / BATCH_SIZE)
+          for (let b = 0; b < remainingCodes.length; b += BATCH_SIZE) {
+            const batchNum = 2 + Math.floor(b / BATCH_SIZE)
+            const batchCodes = remainingCodes.slice(b, b + BATCH_SIZE)
+            addLog('INFO', '➕ Batch ' + batchNum + '/' + totalBatches + ': ' + batchCodes.length + ' ads...')
+            let batchOk = false
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const br = await api.testAddAds({
+                  advertiser_id: acc.advertiser_id,
+                  adgroup_id: adgroupId,
+                  cta_id: ctaId,
+                  display_card_id: displayCardId,
+                  spark_codes: batchCodes,
+                  pre_authorized_sparks: preAuthorizedSparks,
+                  ad_name: 'TESTE ' + offerName,
+                  ad_texts: adTexts,
+                  landing_page_url: accountDomain,
+                  proxy_list: proxyList,
+                  account_index: ai,
+                })
+                if (br.code === 0 && br.data) {
+                  const bd = br.data as any
+                  totalResult.ads += bd.ads || 0
+                  if (bd.logs) bd.logs.forEach((l: any) => {
+                    const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                    addLog(cat, l.message)
+                  })
+                  if (bd.errors && bd.errors.length > 0) { allErrors.push(...bd.errors); bd.errors.forEach((e: any) => addLog('ERROR', '[ad] ' + (e.error || '?'))) }
+                  addLog('OK', 'Batch ' + batchNum + ': ' + (bd.ads||0) + ' ads adicionados')
+                } else { addLog('ERROR', 'Batch ' + batchNum + ' API: ' + JSON.stringify(br).substring(0, 200)) }
+                batchOk = true; break
+              } catch(e: any) {
+                addLog('ERROR', 'Batch ' + batchNum + ' erro: ' + e.message)
+                if (attempt < 2) { addLog('INFO', '🔄 Retry batch em 15s...'); await rndWait(15000, 20000) }
+              }
+            }
+            if (!batchOk) addLog('ERROR', '❌ Batch ' + batchNum + ' falhou após 3 tentativas')
+          }
+        }
       }
     } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
 
