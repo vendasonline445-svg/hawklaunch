@@ -1085,6 +1085,8 @@ export default async function handler(req, res) {
 
     if (action === 'launch_manual' && req.method === 'POST') {
       var body = req.body
+      var testModeM = !!body.test_mode
+      var preAuthSparksM = body.pre_authorized_sparks || {}
       var results = { campaigns: 0, adgroups: 0, ads: 0, errors: [], logs: [], created: [] }
       var L = function(advId, msg) { results.logs.push({ account: advId, message: msg, time: new Date().toISOString() }) }
 
@@ -1114,7 +1116,7 @@ export default async function handler(req, res) {
         var sparkAuthCache = {}
 
         // Ruído comportamental antes de começar (simula navegação no dashboard)
-        await exploreNoise(token, advId, accountProxy, L)
+        if (!testModeM) await exploreNoise(token, advId, accountProxy, L)
 
         // Spark authorization (AUTH_CODE identity only)
         var noPermissionM = false
@@ -1122,6 +1124,12 @@ export default async function handler(req, res) {
           var codesForAccount = body.rotation ? [body.spark_codes[accountIndex % body.spark_codes.length]] : body.spark_codes
           for (var s = 0; s < codesForAccount.length; s++) {
             var code = codesForAccount[s]
+            // test_mode: sparks já autorizados pelo frontend — pula chamada à API
+            if (testModeM && preAuthSparksM[code]) {
+              sparkAuthCache[code] = { ok: true, identity_id: preAuthSparksM[code].identity_id, item_id: preAuthSparksM[code].item_id }
+              L(advId, '✅ (pre-auth) spark ' + (s+1) + '/' + codesForAccount.length)
+              continue
+            }
             L(advId, 'Spark ' + (s+1) + '/' + codesForAccount.length + ': authorize...')
             try {
               var sr = await authorizeSpark(token, advId, code, accountProxy)
@@ -1217,7 +1225,8 @@ export default async function handler(req, res) {
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          await humanDelay(3500, 9000)
+          if (testModeM) await rndDelay(400, 1200)
+          else await humanDelay(3500, 9000)
 
           // Ad Group
           var tz = body.timezone || 'America/Sao_Paulo'
@@ -1306,7 +1315,8 @@ export default async function handler(req, res) {
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          await humanDelay(5000, 12000)
+          if (testModeM) await rndDelay(400, 1200)
+          else await humanDelay(5000, 12000)
 
           // Ads — Spark (AUTH_CODE) mode — Smart Creative (ACO)
           if (body.identity_type === 'AUTH_CODE') {
@@ -1367,7 +1377,8 @@ export default async function handler(req, res) {
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
-            await humanDelay(2500, 6000)
+            if (testModeM) await rndDelay(200, 600)
+            else await humanDelay(2500, 6000)
             var adResM
             try {
               adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)

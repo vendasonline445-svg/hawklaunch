@@ -1037,6 +1037,8 @@ function StepLaunch() {
     setLaunching(true); setLogs([]); setProgress(0); setResult(null); setShowModal(true); abortRef.current = false
     if (campaignType === 'queue') {
       await launchQueue()
+    } else if (campaignType === 'manual' && testMode) {
+      await launchManualTest()
     } else if (campaignType === 'manual') {
       await launchManual()
     } else if (testMode) {
@@ -1426,6 +1428,142 @@ function StepLaunch() {
     if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
   }
 
+  async function launchManualTest() {
+    const sparkCodes = (localStorage.getItem('hawklaunch_spark_codes') || '').split('\n').map((c: string) => c.trim()).filter(Boolean)
+    const proxyList = (localStorage.getItem('hawklaunch_proxy_list') || '').split('\n').map((p: string) => p.trim()).filter(Boolean)
+    const destUrl = localStorage.getItem('hawklaunch_dest_url') || ''
+    const domainList = (localStorage.getItem('hawklaunch_domain_list') || '').split('\n').map((d: string) => d.trim()).filter(Boolean)
+    const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
+    const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
+    const objective = localStorage.getItem('hawklaunch_manual_objective') || 'CONVERSIONS'
+    const callToAction = localStorage.getItem('hawklaunch_manual_cta') || 'SHOP_NOW'
+
+    if (sparkCodes.length === 0) { addLog('ERROR', 'Nenhum Spark Code configurado!'); return }
+    if (!destUrl && domainList.length === 0) { addLog('ERROR', 'URL de destino não configurada!'); return }
+
+    addLog('INFO', '🧪 MODO TESTE CTV — CBO Manual')
+    addLog('INFO', sparkCodes.length + ' sparks × ' + selectedAccounts.length + ' conta(s) → 1 ACO adgroup/conta')
+    addLog('DEBUG', 'Objetivo: ' + objective + ' · Budget: R$' + testBudget + '/dia CBO · Lance: Auto')
+    if (proxyList.length > 0) addLog('INFO', '🛡️ Proxy: ' + proxyList.length + ' proxy(ies)')
+    else addLog('WARN', '⚠️ Sem proxy — IP da Vercel')
+    setProgress(5)
+
+    const scheduleStart = buildScheduleStart()
+    let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
+    let allErrors: any[] = []
+    const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
+    const billingByObjective: Record<string, string> = { CONVERSIONS: 'OCPM', WEB_CONVERSIONS: 'OCPM', TRAFFIC: 'CPC', REACH: 'CPM', VIDEO_VIEWS: 'CPV', ENGAGEMENT: 'OCPM' }
+    const goalByObjective: Record<string, string> = { CONVERSIONS: 'CONVERT', WEB_CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'ENGAGED_VIEW', ENGAGEMENT: 'FOLLOWERS' }
+
+    try {
+      for (let ai = 0; ai < selectedAccounts.length; ai++) {
+        const acc = selectedAccounts[ai]
+        addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
+        if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+        if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
+
+        // Pré-autorizar todos os sparks para esta conta
+        addLog('INFO', '🔐 Pré-autorizando ' + sparkCodes.length + ' sparks...')
+        const proxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+        const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
+        let accountNoPermission = false
+
+        for (let si = 0; si < sparkCodes.length; si++) {
+          if (abortRef.current) break
+          const code = sparkCodes[si]
+          addLog('DEBUG', 'Spark ' + (si+1) + '/' + sparkCodes.length + '...')
+          try {
+            const r = await api.authorizeSpark(acc.advertiser_id, code, proxy)
+            if ((r as any).ok) {
+              preAuthorizedSparks[code] = { identity_id: (r as any).identity_id, item_id: (r as any).item_id }
+              addLog('OK', '✅ Spark ' + (si+1) + ': identity=' + (r as any).identity_id)
+            } else {
+              addLog('WARN', '⚠️ Spark ' + (si+1) + ': ' + ((r as any).error || '?'))
+              allErrors.push({ account: acc.advertiser_id, step: 'spark', error: (r as any).error })
+              if ((r as any).permanent) { accountNoPermission = true; break }
+            }
+          } catch(e: any) {
+            addLog('ERROR', '❌ Spark ' + (si+1) + ': ' + e.message)
+            allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
+          }
+          setProgress(Math.round(5 + ((ai * sparkCodes.length + si + 1) / (selectedAccounts.length * sparkCodes.length) * 40)))
+        }
+
+        if (accountNoPermission) { addLog('WARN', '⛔ Sem permissão — conta ignorada'); continue }
+        const authorizedCount = Object.keys(preAuthorizedSparks).length
+        if (authorizedCount === 0) { addLog('ERROR', '❌ Nenhum spark autorizado — pulando'); continue }
+        addLog('INFO', '✅ ' + authorizedCount + '/' + sparkCodes.length + ' sparks autorizados')
+
+        setProgress(Math.round(45 + ((ai / selectedAccounts.length) * 50)))
+        const singlePayload = {
+          accounts: [acc],
+          campaign_name: 'TESTE ' + offerName,
+          adgroup_name: 'AG TESTE ' + offerName,
+          ad_name: 'TESTE ' + offerName,
+          objective_type: objective,
+          budget_mode: 'cbo',
+          budget: testBudget,
+          billing_event: billingByObjective[objective] || 'OCPM',
+          optimization_goal: goalByObjective[objective] || 'CONVERT',
+          identity_type: 'AUTH_CODE',
+          spark_codes: Object.keys(preAuthorizedSparks),
+          rotation: false,
+          campaigns_per_account: 1,
+          ads_per_code: 1,
+          call_to_action: callToAction,
+          landing_page_url: destUrl,
+          domain_list: domainList,
+          ad_texts: adTexts,
+          pixel_id: localStorage.getItem('hawklaunch_pixel_id') || undefined,
+          optimization_event: localStorage.getItem('hawklaunch_opt_event') || 'SHOPPING',
+          start_paused: startPaused,
+          location_ids: getLocationIds(),
+          schedule_start: scheduleStart,
+          timezone: getTargetTimezone(),
+          proxy_list: proxyList,
+          account_index: ai,
+          test_mode: true,
+          pre_authorized_sparks: preAuthorizedSparks,
+          display_card: localStorage.getItem('hawklaunch_card_enabled') === 'true' && (localStorage.getItem('hawklaunch_card_image_id') || localStorage.getItem('hawklaunch_card_image_url'))
+            ? { image_id: localStorage.getItem('hawklaunch_card_image_id') || undefined, image_url: localStorage.getItem('hawklaunch_card_image_url') || localStorage.getItem('hawklaunch_card_preview') || undefined, title: localStorage.getItem('hawklaunch_card_title') || '', cta: callToAction }
+            : undefined,
+        }
+
+        let retryOk = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await api.launchManual(singlePayload)
+            if (r.code === 0 && r.data) {
+              const d = r.data as any
+              totalResult.campaigns += d.campaigns || 0
+              totalResult.adgroups += d.adgroups || 0
+              totalResult.ads += d.ads || 0
+              if (d.logs) d.logs.forEach((l: any) => {
+                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                addLog(cat, l.message)
+              })
+              if (d.errors && d.errors.length > 0) {
+                allErrors.push(...d.errors)
+                d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?')))
+              }
+              addLog('OK', 'Conta ' + (ai+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
+            } else { addLog('ERROR', 'API: ' + JSON.stringify(r).substring(0, 300)) }
+            retryOk = true; break
+          } catch(e: any) {
+            addLog('ERROR', 'Erro de rede: ' + e.message)
+            if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
+          }
+        }
+        if (!retryOk) addLog('ERROR', '❌ Conta ' + (ai+1) + ' falhou após 3 tentativas')
+      }
+    } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
+
+    setProgress(100)
+    setResult(totalResult)
+    addLog('OK', '🧪 TESTE CBO COMPLETO! ' + totalResult.campaigns + ' camp, ' + totalResult.adgroups + ' ag, ' + totalResult.ads + ' adgroup(s) ACO')
+    if (allErrors.length) allErrors.forEach((e: any) => addLog('ERROR', '[' + e.step + '] ' + e.error))
+  }
+
   async function launchQueue() {
     const smartCount = parseInt(localStorage.getItem('hawklaunch_queue_smart_count') || '0')
     const manualCount = parseInt(localStorage.getItem('hawklaunch_queue_manual_count') || '0')
@@ -1783,8 +1921,8 @@ function StepLaunch() {
       </div>
     )}
 
-    {/* Modo Teste CTV toggle — apenas Smart+ */}
-    {campaignType === 'smart-spark' && (
+    {/* Modo Teste CTV toggle — Smart+ e Manual */}
+    {(campaignType === 'smart-spark' || campaignType === 'manual') && (
       <div className={`p-4 border rounded-xl mb-4 transition-colors ${testMode ? 'border-amber-500/40 bg-amber-500/5' : 'border-hawk-border bg-hawk-input'}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -1795,9 +1933,13 @@ function StepLaunch() {
             <div className="text-[11px] text-gray-500 mt-1">
               {testMode
                 ? sparkCodeCount > 0
-                  ? '1 camp/conta · ' + sparkCodeCount + ' sparks em 1 adgroup (' + sparkCodeCount + ' ads) · R$' + testBudget + '/dia sem meta CPA'
+                  ? campaignType === 'manual'
+                    ? '1 camp CBO/conta · ' + sparkCodeCount + ' sparks em 1 ACO adgroup · R$' + testBudget + '/dia sem lance'
+                    : '1 camp/conta · ' + sparkCodeCount + ' sparks em 1 adgroup (' + sparkCodeCount + ' ads) · R$' + testBudget + '/dia sem meta CPA'
                   : '1 camp/conta · todos os sparks em 1 adgroup · sem meta CPA'
-                : 'Ativo: modo escala — ' + (parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')) + ' camp/conta · 1 spark rotacionado'}
+                : campaignType === 'manual'
+                  ? 'Ativo: modo escala — ' + (parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '1')) + ' camp/conta · spark rotacionado'
+                  : 'Ativo: modo escala — ' + (parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '5')) + ' camp/conta · 1 spark rotacionado'}
             </div>
           </div>
           <div className={`toggle ${testMode ? 'on' : ''}`} onClick={() => setTestMode(!testMode)}/>
