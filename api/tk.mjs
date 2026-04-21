@@ -946,8 +946,7 @@ export default async function handler(req, res) {
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
           // Tempo "humano" entre criar campanha e configurar adgroup (lê targeting, budget, bid)
-          if (testMode) await rndDelay(400, 1200)
-          else await humanDelay(3500, 9000)
+          if (!testMode) await humanDelay(3500, 9000)
 
           var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
@@ -1003,8 +1002,7 @@ export default async function handler(req, res) {
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
           // Tempo humano entre adgroup e primeiro ad (escolhe creative, escreve texto, preview)
-          if (testMode) await rndDelay(400, 1200)
-          else await humanDelay(5000, 12000)
+          if (!testMode) await humanDelay(5000, 12000)
 
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
@@ -1034,8 +1032,7 @@ export default async function handler(req, res) {
               }
               // Tempo humano entre ads do mesmo adgroup (troca creative/texto)
               if (c > 0 || a > 0) {
-                if (testMode) await rndDelay(200, 600)
-                else await humanDelay(2500, 7000)
+                if (!testMode) await humanDelay(2500, 7000)
               }
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes, adOk = false
@@ -1225,8 +1222,7 @@ export default async function handler(req, res) {
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          if (testModeM) await rndDelay(400, 1200)
-          else await humanDelay(3500, 9000)
+          if (!testModeM) await humanDelay(3500, 9000)
 
           // Ad Group
           var tz = body.timezone || 'America/Sao_Paulo'
@@ -1315,8 +1311,7 @@ export default async function handler(req, res) {
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          if (testModeM) await rndDelay(400, 1200)
-          else await humanDelay(5000, 12000)
+          if (!testModeM) await humanDelay(5000, 12000)
 
           // Ads — Spark (AUTH_CODE) mode — Smart Creative (ACO)
           if (body.identity_type === 'AUTH_CODE') {
@@ -1377,8 +1372,7 @@ export default async function handler(req, res) {
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
-            if (testModeM) await rndDelay(200, 600)
-            else await humanDelay(2500, 6000)
+            if (!testModeM) await humanDelay(2500, 6000)
             var adResM
             try {
               adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
