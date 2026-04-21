@@ -6,45 +6,64 @@ import sharp from 'sharp'
 var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 
 // ─── Anti-detecção ────────────────────────────────────────────────────────────
+// Filosofia: o Business API é server-to-server. Imitar browser (Origin/Referer/Sec-CH-UA)
+// é anti-padrão — cliente legítimo não envia esses headers. O que o TikTok detecta é
+// padrão COMPORTAMENTAL: velocidade, repetição, sequência fixa. Investir aí.
 
-var USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-]
+// User-Agent fixo e identificável (conforme convenção de SDK). Rotação de UA em S2S
+// não engana nada e pode ser sinal extra de anomalia (mesmo token, UA muda a cada call).
+var UA = 'HawkLaunch/1.0 (+https://hawklaunch.vercel.app)'
 
-// Plataformas coerentes com o User-Agent
-var SEC_CH_PLATFORMS = ['"Windows"', '"Windows"', '"macOS"', '"macOS"', '"Linux"']
-
-function randomUA() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
-}
-
-// request_id humano: timestamp com jitter variável + sufixo de comprimento variável
+// request_id para idempotência — docs v1.3 (/campaign/create/):
+// "supports idempotency to prevent you from sending the same request twice within 10 seconds"
+// "The value should be a string representation of a 64-bit integer number"
+// Máx. 64-bit signed = 9223372036854775807 (19 dígitos). Usamos ts(13) + 5 dígitos = 18 dígitos.
 function makeRequestId() {
-  // Jitter entre 50ms e 3200ms — simula latência de rede e processamento real
-  var jitter = 50 + Math.floor(Math.random() * 3150)
-  var ts = Date.now() - jitter
-  // Sufixo com comprimento variável (3 a 6 dígitos) — evita padrão fixo de 4 dígitos
-  var suffixLen = 3 + Math.floor(Math.random() * 4)
-  var lo = Math.pow(10, suffixLen - 1)
-  var hi = Math.pow(10, suffixLen) - 1
-  var suffix = lo + Math.floor(Math.random() * (hi - lo + 1))
+  var ts = Date.now() // 13 dígitos
+  var suffix = 10000 + Math.floor(Math.random() * 89999) // 5 dígitos fixos
   return String(ts) + String(suffix)
 }
 
-// delay com distribuição triangular — mais próxima do comportamento humano que uniforme pura
-// (média de 2 uniformes cria pico no centro, com caudas naturais nos extremos)
+// Delay curto com distribuição triangular simétrica. Usar APENAS para micro-pausas
+// entre chamadas muito próximas (ex: handshake, retry curto). Para pausas entre
+// operações lógicas, usar humanDelay().
 function rndDelay(min, max) {
   var val = min + ((Math.random() + Math.random()) / 2) * (max - min)
   return new Promise(r => setTimeout(r, Math.floor(val)))
+}
+
+// Delay humano: distribuição log-normal-like com cauda longa.
+// Humanos no UI têm tempos medianos rápidos mas com pausas ocasionais longas
+// (distração, leitura, pensamento). 90% das vezes fica entre min e (min+max)/2;
+// 10% das vezes pode ir até max (ou além se spikeChance=true).
+function humanDelay(min, max, spikeChance) {
+  var r = Math.random()
+  var val
+  if (spikeChance !== false && r > 0.92) {
+    // 8% de chance de "pausa longa" — vai até 1.5x max
+    val = max + Math.random() * (max * 0.5)
+  } else {
+    // 92% dos casos: enviesado pra baixo, mediana em ~1/3 do range
+    var biased = Math.pow(Math.random(), 1.8)
+    val = min + biased * (max - min)
+  }
+  return new Promise(res => setTimeout(res, Math.floor(val)))
+}
+
+// Fisher-Yates — retorna cópia embaralhada, não muta o original
+function shuffleCopy(arr) {
+  if (!Array.isArray(arr)) return arr
+  var out = arr.slice()
+  for (var i = out.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1))
+    var tmp = out[i]; out[i] = out[j]; out[j] = tmp
+  }
+  return out
+}
+
+function pickRandom(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null
+  return arr[Math.floor(Math.random() * arr.length)]
 }
 
 function humanizeValue(base, pct) {
@@ -131,49 +150,20 @@ async function getToken() {
   } catch(e) { return null }
 }
 
-// Gera Accept-Language variado para parecer diferentes regiões/idiomas
-function randomAcceptLang() {
-  var langs = [
-    'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    'pt-BR,pt;q=0.9,en;q=0.8',
-    'en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7',
-    'pt-BR,pt;q=0.8,es;q=0.5,en;q=0.3',
-    'en-US,en;q=0.9',
-  ]
-  return langs[Math.floor(Math.random() * langs.length)]
-}
-
 async function ttOnce(endpoint, token, method, body, proxyRaw) {
   var proxyUrl = parseProxy(proxyRaw || null)
   var agent = proxyUrl ? makeAgent(proxyUrl) : null
-  var ua = randomUA()
-  var platform = SEC_CH_PLATFORMS[Math.floor(Math.random() * SEC_CH_PLATFORMS.length)]
-  var isMac = platform.includes('macOS')
-  var chromeVer = ['129', '130', '131'][Math.floor(Math.random() * 3)]
   var opts = {
     method: method || 'GET',
     headers: {
       'Access-Token': token,
       'Content-Type': 'application/json',
-      'User-Agent': ua,
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': randomAcceptLang(),
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'Origin': 'https://ads.tiktok.com',
-      'Referer': 'https://ads.tiktok.com/',
-      'sec-ch-ua': '"Google Chrome";v="' + chromeVer + '", "Chromium";v="' + chromeVer + '", "Not_A Brand";v="24"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': platform,
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': isMac ? 'cross-site' : 'same-site',
+      'User-Agent': UA,
     }
   }
   if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body)
   if (agent) opts.agent = agent
-  opts.signal = AbortSignal.timeout(15000)
+  opts.signal = AbortSignal.timeout(20000)
   var r = await nodeFetch(TIKTOK_API + endpoint, opts)
   return r.json()
 }
@@ -214,6 +204,30 @@ async function tt(endpoint, token, method, body, proxyRaw) {
     }
   }
   throw new Error(lastErr + ' (3 tentativas)')
+}
+
+// Ruído exploratório: um humano no Ads Manager UI normalmente lista campanhas,
+// pixels e identidades antes de criar uma nova campanha. Fazer 1-2 GETs "de bisbilhotice"
+// quebra a fingerprint comportamental de "sempre cria direto sem olhar nada".
+// Chamada com probabilidade (~60%) — não sempre, pra não virar padrão fixo também.
+async function exploreNoise(token, advertiserId, proxyRaw, logFn) {
+  if (Math.random() > 0.6) return // 40% das contas pulam (varia execução pra execução)
+  var endpoints = [
+    '/campaign/get/?advertiser_id=' + advertiserId + '&page_size=10',
+    '/pixel/list/?advertiser_id=' + advertiserId,
+    '/identity/get/?advertiser_id=' + advertiserId,
+    '/ad/get/?advertiser_id=' + advertiserId + '&page_size=10',
+  ]
+  var shuffled = shuffleCopy(endpoints)
+  var n = 1 + Math.floor(Math.random() * 2) // 1 ou 2 chamadas
+  for (var i = 0; i < n; i++) {
+    try {
+      await ttOnce(shuffled[i], token, 'GET', null, proxyRaw)
+      if (logFn) logFn(advertiserId, '👁️  ' + shuffled[i].split('?')[0])
+    } catch(e) { /* ignora silenciosamente — é só ruído */ }
+    if (i < n - 1) await humanDelay(1500, 4500)
+  }
+  await humanDelay(2000, 6000) // pausa "pensando" antes de começar a criar
 }
 
 async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
@@ -334,9 +348,85 @@ function parseProxyList(rawList) {
   return rawList.map(parseProxy).filter(Boolean)
 }
 
+// Mapeamento permanente conta→proxy. Uma mesma conta SEMPRE pega o mesmo slot
+// no pool de proxies — combinado com stickifyProxy abaixo, isso garante IP estável
+// por conta ao longo do tempo (padrão humano: anunciante sempre do mesmo lugar).
+// Não rotacionar por tempo: rotação temporal = anomalia em account↔IP history.
 function proxyForAccount(proxyList, accountIndex) {
   if (!proxyList || proxyList.length === 0) return null
   return proxyList[accountIndex % proxyList.length]
+}
+
+// Injeta sticky session id no username do proxy para manter o MESMO IP real
+// residencial por advertiser em todas as chamadas de uma operação. Sem isso,
+// proxies "rotativas" mudam o IP a cada request — TikTok vê IP hopping (bot).
+//
+// Cada provider usa uma sintaxe de sticky DIFERENTE. Detectamos pelo host:
+//
+//   DataImpulse (docs.dataimpulse.com/proxies/parameters/session-id):
+//     Delimitadores: "__" separa login de params, "." separa key=value, ";" separa params
+//     Formato: username__sessid.NUMERO  OU  username__cr.br;sessid.NUMERO
+//     Duração: ~30 min por session id
+//
+//   Bright Data / IPRoyal / padrão da indústria:
+//     Formato: username-session-XXX
+//
+// Se proxy é sem auth ou formato inválido, retorna original (não quebra).
+function stickifyProxy(proxyRaw, advertiserId) {
+  if (!proxyRaw || !advertiserId) return proxyRaw
+  var trimmed = String(proxyRaw).trim()
+  if (!trimmed) return proxyRaw
+
+  var bare = trimmed.replace(/^https?:\/\//, '')
+
+  var user, pass, host, port
+  if (bare.includes('@')) {
+    var atIdx = bare.lastIndexOf('@')
+    var authStr = bare.slice(0, atIdx)
+    var hostStr = bare.slice(atIdx + 1)
+    var authColon = authStr.indexOf(':')
+    if (authColon < 0) return proxyRaw
+    user = authStr.slice(0, authColon)
+    pass = authStr.slice(authColon + 1)
+    var hostParts = hostStr.split(':')
+    if (hostParts.length !== 2) return proxyRaw
+    host = hostParts[0]; port = hostParts[1]
+  } else {
+    var parts = bare.split(':')
+    if (parts.length !== 4) return proxyRaw
+    host = parts[0]; port = parts[1]; user = parts[2]; pass = parts[3]
+  }
+
+  if (!user || !pass || !host || !port) return proxyRaw
+
+  var sessionNum = String(advertiserId).replace(/\D/g, '').slice(-10) // só dígitos
+  if (!sessionNum) return proxyRaw
+
+  var newUser
+  var hostLower = host.toLowerCase()
+
+  if (hostLower.includes('dataimpulse.com')) {
+    // DataImpulse: username__sessid.NUMERO (ou ;sessid.NUMERO se já tem params)
+    if (/__[^:]*sessid\.[^;]+/.test(user)) {
+      // Já tem sessid — substitui
+      newUser = user.replace(/sessid\.[^;]+/, 'sessid.' + sessionNum)
+    } else if (user.includes('__')) {
+      // Tem outros params (cr, city, asn) — append sessid no final
+      newUser = user + ';sessid.' + sessionNum
+    } else {
+      // Username limpo — inicia bloco de params com __
+      newUser = user + '__sessid.' + sessionNum
+    }
+  } else {
+    // Padrão da indústria (Bright Data, IPRoyal, genérico): -session-sXXX
+    var sessionTag = 's' + sessionNum
+    if (/-session-[^-]+/.test(user)) {
+      newUser = user.replace(/-session-[^-]+/, '-session-' + sessionTag)
+    } else {
+      newUser = user + '-session-' + sessionTag
+    }
+  }
+  return 'http://' + newUser + ':' + pass + '@' + host + ':' + port
 }
 
 export default async function handler(req, res) {
@@ -389,7 +479,7 @@ export default async function handler(req, res) {
       var body = req.body
       var advId = body && body.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      var proxyRaw = (body && body.proxy) || null
+      var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
 
       try {
         var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
@@ -421,7 +511,7 @@ export default async function handler(req, res) {
       var advId = body && body.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
 
-      var proxyRaw = (body && body.proxy) || null
+      var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
 
       try {
         var campRes = await tt('/campaign/get/?advertiser_id=' + advId + '&page_size=100', token, 'GET', null, proxyRaw)
@@ -456,7 +546,7 @@ export default async function handler(req, res) {
     if (action === 'ad_list_review') {
       var advId = req.query.advertiser_id
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
-      var proxyRaw = req.query.proxy || null
+      var proxyRaw = stickifyProxy(req.query.proxy || null, advId)
 
       // Passo 1: buscar todos os Smart Plus ads via /smart_plus/ad/get/
       // (os ads "Upgraded Smart+" NÃO aparecem no /ad/get/ normal)
@@ -563,10 +653,10 @@ export default async function handler(req, res) {
 
     if (action === 'ad_appeal' && req.method === 'POST') {
       var body = req.body
-      var advId = body && body.advertiser_id
       var adId = body && body.ad_id
+      var advId = body && body.advertiser_id
       if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
-      var proxyRaw = (body && body.proxy) || null
+      var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
       // Appeal para Upgraded Smart Plus ads: POST /smart_plus/ad/appeal/
       var result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
         advertiser_id: advId,
@@ -663,13 +753,15 @@ export default async function handler(req, res) {
     if (action === 'spark_authorize' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'advertiser_id and auth_code required' })
-      return res.json(await authorizeSpark(token, body.advertiser_id, body.auth_code, body.proxy || null))
+      var sparkProxy = stickifyProxy(body.proxy || null, body.advertiser_id)
+      return res.json(await authorizeSpark(token, body.advertiser_id, body.auth_code, sparkProxy))
     }
 
     if (action === 'spark_info' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'need advertiser_id + auth_code' })
-      return res.json(await tt('/tt_video/info/?advertiser_id=' + body.advertiser_id + '&auth_code=' + encodeURIComponent(body.auth_code), token))
+      var sparkInfoProxy = stickifyProxy(body.proxy || null, body.advertiser_id)
+      return res.json(await tt('/tt_video/info/?advertiser_id=' + body.advertiser_id + '&auth_code=' + encodeURIComponent(body.auth_code), token, 'GET', null, sparkInfoProxy))
     }
 
     if (action === 'launch_smart' && req.method === 'POST') {
@@ -682,13 +774,7 @@ export default async function handler(req, res) {
 
       var proxyList = parseProxyList(body.proxy_list || [])
       var accountIndex = body.account_index != null ? body.account_index : 0
-      var accountProxy = proxyForAccount(proxyList, accountIndex)
-
-      if (accountProxy) {
-        L('system', '🛡️ Proxy: ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
-      } else {
-        L('system', '⚠️ Sem proxy — IP direto da Vercel')
-      }
+      var rawAccountProxy = proxyForAccount(proxyList, accountIndex)
 
       // Parse domain list — rodízio por conta
       var domainList = Array.isArray(body.domain_list) ? body.domain_list.filter(Boolean) : []
@@ -702,6 +788,14 @@ export default async function handler(req, res) {
 
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
+        // Sticky: mesma conta sempre do mesmo IP real (session id = advertiser_id).
+        // Evita IP hopping que a rotação nativa do provider causaria sem isso.
+        var accountProxy = stickifyProxy(rawAccountProxy, advId)
+        if (accountProxy) {
+          L('system', '🛡️ Proxy (sticky): ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+        } else {
+          L('system', '⚠️ Sem proxy — IP direto da Vercel')
+        }
         sparkAuthCache[advId] = {}
         var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
 
@@ -766,11 +860,16 @@ export default async function handler(req, res) {
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
         var accountCurrency = body.accounts[i].currency || 'BRL'
+        // Sticky por conta (mesma session id do primeiro loop — mesmo IP real)
+        var accountProxy = stickifyProxy(rawAccountProxy, advId)
         // Pula conta sem permissão
         if (noPermission) { noPermission = false; continue }
         var accountSparks = sparkAuthCache[advId] || {}
         var ctaId = ctaCache[advId] || null
         var pixelId = body.pixel_id || null
+
+        // Ruído comportamental: "olha o dashboard" antes de começar a criar
+        await exploreNoise(token, advId, accountProxy, L)
 
         if (!pixelId) {
           try {
@@ -837,7 +936,8 @@ export default async function handler(req, res) {
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          await rndDelay(400, 700)
+          // Tempo "humano" entre criar campanha e configurar adgroup (lê targeting, budget, bid)
+          await humanDelay(3500, 9000)
 
           var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
@@ -892,10 +992,13 @@ export default async function handler(req, res) {
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          await rndDelay(400, 700)
+          // Tempo humano entre adgroup e primeiro ad (escolhe creative, escreve texto, preview)
+          await humanDelay(5000, 12000)
 
           var codesForAccount = body.rotation ? [sparkCodes[accountIndex % sparkCodes.length]] : sparkCodes
           var adsPerCode = body.ads_per_code || 2
+          // Embaralha textos do ad por conta para reduzir similaridade entre contas
+          var adTextsForAccount = shuffleCopy(body.ad_texts || ['Shop now'])
           for (var c = 0; c < codesForAccount.length; c++) {
             var sd = accountSparks[codesForAccount[c]]
             if (!sd || !sd.ok) { L(advId, '⚠️ Spark ' + (c+1) + ' not authorized'); continue }
@@ -907,7 +1010,7 @@ export default async function handler(req, res) {
                 adgroup_id: adgroupId,
                 ad_name: (body.ad_name || campPayload.campaign_name) + ' ' + adSuffix,
                 creative_list: [{ creative_info: { ad_format: 'SINGLE_VIDEO', tiktok_item_id: sd.item_id, identity_type: 'AUTH_CODE', identity_id: sd.identity_id } }],
-                ad_text_list: (body.ad_texts || ['Shop now']).map(function(t) { return { ad_text: t } }),
+                ad_text_list: adTextsForAccount.map(function(t) { return { ad_text: t } }),
                 landing_page_url_list: [{ landing_page_url: accountDomain }],
               }
               if (ctaId) {
@@ -918,22 +1021,28 @@ export default async function handler(req, res) {
               if (displayCardId) {
                 adPayload.interactive_add_on_list = [{ card_id: displayCardId }]
               }
-              if (c > 0 || a > 0) await rndDelay(500, 1000)
+              // Tempo humano entre ads do mesmo adgroup (troca creative/texto)
+              if (c > 0 || a > 0) await humanDelay(2500, 7000)
               L(advId, 'Ad ' + (c+1) + '-' + (a+1) + '...')
               var adRes, adOk = false
               for (var adAttempt = 0; adAttempt < 3; adAttempt++) {
                 try {
-                  adPayload.request_id = makeRequestId()
                   adRes = await tt('/smart_plus/ad/create/', token, 'POST', adPayload, accountProxy)
                   if (adRes.code !== 0 && adRes.message && (adRes.message.includes('concurrent') || adRes.message.includes('does not exist'))) {
                     if (adAttempt < 2) {
                       L(advId, '⏳ ' + (adRes.message.includes('concurrent') ? 'Concurrent limit' : 'Transient error') + ', retry ' + (adAttempt+2) + '/3...')
-                      await rndDelay(2000 + adAttempt*2000, 4000 + adAttempt*2000)
+                      await rndDelay(3000 + adAttempt*4000, 7000 + adAttempt*4000)
+                      // "does not exist" / "concurrent" = resource ainda não foi criado no TikTok
+                      // → novo request_id é seguro (não há nada pra deduplicar)
+                      adPayload.request_id = makeRequestId()
                       continue
                     }
                   }
                   adOk = true; break
                 } catch(e) {
+                  // Timeout/rede → MANTER request_id. Se a request original chegou no TikTok,
+                  // o retry com mesmo id retorna o ad existente (dentro dos 10s de idempotência
+                  // documentados em _campaign_create_.md, mesma regra se aplica a ad/create)
                   L(advId, '❌ Ad network error: ' + e.message)
                   if (adAttempt < 2) { L(advId, '🔄 Ad retry ' + (adAttempt+2) + '/3...'); await rndDelay(3000 + adAttempt*3000, 6000 + adAttempt*3000) }
                 }
@@ -967,13 +1076,7 @@ export default async function handler(req, res) {
 
       var proxyList = parseProxyList(body.proxy_list || [])
       var accountIndex = body.account_index != null ? body.account_index : 0
-      var accountProxy = proxyForAccount(proxyList, accountIndex)
-
-      if (accountProxy) {
-        L('system', '🛡️ Proxy: ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
-      } else {
-        L('system', '⚠️ Sem proxy — IP direto da Vercel')
-      }
+      var rawAccountProxy = proxyForAccount(proxyList, accountIndex)
 
       var domainList = Array.isArray(body.domain_list) ? body.domain_list.filter(Boolean) : []
       var accountDomain = domainList.length > 0
@@ -987,7 +1090,17 @@ export default async function handler(req, res) {
       for (var i = 0; i < body.accounts.length; i++) {
         var advId = body.accounts[i].advertiser_id
         var accountCurrency = body.accounts[i].currency || 'BRL'
+        // Sticky: mesmo IP real pra todas as chamadas desta conta
+        var accountProxy = stickifyProxy(rawAccountProxy, advId)
+        if (accountProxy) {
+          L('system', '🛡️ Proxy (sticky): ' + accountProxy.replace(/\/\/([^:]+):([^@]+)@/, '//**:**@'))
+        } else {
+          L('system', '⚠️ Sem proxy — IP direto da Vercel')
+        }
         var sparkAuthCache = {}
+
+        // Ruído comportamental antes de começar (simula navegação no dashboard)
+        await exploreNoise(token, advId, accountProxy, L)
 
         // Spark authorization (AUTH_CODE identity only)
         var noPermissionM = false
@@ -1090,7 +1203,7 @@ export default async function handler(req, res) {
           var campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
-          await rndDelay(1500, 3000)
+          await humanDelay(3500, 9000)
 
           // Ad Group
           var tz = body.timezone || 'America/Sao_Paulo'
@@ -1179,7 +1292,7 @@ export default async function handler(req, res) {
           var adgroupId = agRes.data.adgroup_id
           L(advId, '✅ AdGroup: ' + adgroupId)
           results.adgroups++
-          await rndDelay(1500, 3000)
+          await humanDelay(5000, 12000)
 
           // Ads — Spark (AUTH_CODE) mode — Smart Creative (ACO)
           if (body.identity_type === 'AUTH_CODE') {
@@ -1240,12 +1353,12 @@ export default async function handler(req, res) {
             }
 
             L(advId, 'Smart Creative: ' + mediaInfoList.length + ' vídeo(s), ' + titleList.length + ' texto(s)...')
-            await rndDelay(2000, 3000)
+            await humanDelay(2500, 6000)
             var adResM
             try {
               adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
               if (adResM.code !== 0 && adResM.message && adResM.message.includes('concurrent')) {
-                await rndDelay(8000, 12000)
+                await humanDelay(10000, 18000)
                 adResM = await tt('/ad/aco/create/', token, 'POST', acoPayload, accountProxy)
               }
             } catch(e) {
@@ -1281,22 +1394,24 @@ export default async function handler(req, res) {
               }
               if (body.ad_texts && body.ad_texts.length > 0) creativeV.ad_text = body.ad_texts[v % body.ad_texts.length]
               if (displayCardIdM) creativeV.card_id = displayCardIdM
-              var adPayloadV = { advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV] }
+              var adPayloadV = { advertiser_id: advId, adgroup_id: adgroupId, creatives: [creativeV], request_id: makeRequestId() }
               L(advId, 'Ad vídeo ' + (v+1) + '/' + videoIds.length + '...')
               var adResV, adOkV = false
               for (var adAttemptV = 0; adAttemptV < 3; adAttemptV++) {
                 try {
-                  adPayloadV.request_id = makeRequestId()
                   adResV = await tt('/ad/create/', token, 'POST', adPayloadV, accountProxy)
                   if (adResV.code !== 0 && adResV.message && (adResV.message.includes('concurrent') || adResV.message.includes('does not exist'))) {
                     if (adAttemptV < 2) {
                       L(advId, '⏳ ' + (adResV.message.includes('concurrent') ? 'Concurrent limit' : 'Transient error') + ', retry ' + (adAttemptV+2) + '/3...')
-                      await rndDelay(2000 + adAttemptV*2000, 4000 + adAttemptV*2000)
+                      await rndDelay(3000 + adAttemptV*4000, 7000 + adAttemptV*4000)
+                      // Resource não propagou → novo request_id seguro
+                      adPayloadV.request_id = makeRequestId()
                       continue
                     }
                   }
                   adOkV = true; break
                 } catch(e) {
+                  // Timeout → mantém request_id para idempotência
                   L(advId, '❌ Ad network error: ' + e.message)
                   if (adAttemptV < 2) { L(advId, '🔄 Ad retry ' + (adAttemptV+2) + '/3...'); await rndDelay(3000 + adAttemptV*3000, 6000 + adAttemptV*3000) }
                 }
