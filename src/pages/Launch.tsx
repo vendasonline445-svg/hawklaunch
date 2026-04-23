@@ -1081,6 +1081,8 @@ function StepLaunch() {
     let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
     let allErrors: any[] = []
     const rndWait = (min: number, max: number) => new Promise(r => setTimeout(r, Math.floor(min + ((Math.random() + Math.random()) / 2) * (max - min))))
+    // Cache cross-call: evita recriar display_card a cada campanha (economiza 2-5s/call)
+    const displayCardCache: Record<string, string> = {}
 
     try {
       const payload = {
@@ -1114,16 +1116,54 @@ function StepLaunch() {
         if (abortRef.current) { addLog('WARN', '⛔ Lançamento interrompido pelo usuário'); break }
         if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
 
+        // Pré-autoriza o spark desta conta ANTES do loop de campanhas.
+        // Tira a chamada authorizeSpark (2-5s) do envelope Vercel 60s, reduzindo risco de timeout.
+        // Com rotation=true só 1 código é usado por conta (sparkCodes[ai % sparkCodes.length]).
+        const accProxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+        const codeForAccount = sparkCodes[ai % sparkCodes.length]
+        const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
         let accountNoPermission = false
+
+        addLog('DEBUG', '🔐 Pré-autorizando spark...')
+        try {
+          const sr: any = await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy)
+          if (sr.ok) {
+            preAuthorizedSparks[codeForAccount] = { identity_id: sr.identity_id, item_id: sr.item_id }
+            addLog('OK', '✅ Spark pré-autorizado: identity=' + sr.identity_id)
+          } else {
+            addLog('WARN', '⚠️ Spark: ' + (sr.error || '?'))
+            allErrors.push({ account: acc.advertiser_id, step: 'spark', error: sr.error })
+            if (sr.permanent) accountNoPermission = true
+          }
+        } catch(e: any) {
+          addLog('ERROR', '❌ Pré-autorização falhou: ' + e.message)
+          allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
+          // Sem spark não adianta tentar — pula conta
+          continue
+        }
+        if (accountNoPermission) { addLog('WARN', '⛔ Sem permissão — conta ignorada'); continue }
+        if (Object.keys(preAuthorizedSparks).length === 0) { addLog('ERROR', '❌ Spark não autorizado — pulando conta'); continue }
+
         for (let cp = 0; cp < campsPerAcc; cp++) {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
           if (accountNoPermission) break
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
+          const singlePayload = {
+            ...payload,
+            accounts: [acc],
+            campaigns_per_account: 1,
+            start_seq: 1 + (ai * campsPerAcc) + cp,
+            proxy_list: proxyList,
+            account_index: ai,
+            pre_authorized_sparks: preAuthorizedSparks,
+            display_card_cache: displayCardCache,
+          }
           let retryOk = false
+          let hadTimeout = false
           for (let attempt = 0; attempt < 3; attempt++) {
+            if (abortRef.current) { addLog('WARN', '⛔ Interrompido durante retry'); break }
             try {
               const r = await api.launchSmart(singlePayload)
               if (r.code === 0 && r.data) {
@@ -1136,6 +1176,7 @@ function StepLaunch() {
                   localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(merged))
                   Object.assign(ctaCacheSaved, d.cta_cache)
                 }
+                if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
                 if (d.logs) d.logs.forEach((l: any) => {
                   const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                   addLog(cat, l.message)
@@ -1152,10 +1193,19 @@ function StepLaunch() {
               retryOk = true; break
             } catch(e: any) {
               addLog('ERROR', 'Erro de rede: ' + e.message)
+              // 504 = timeout Vercel. request_id é regenerado no handler → retry cria campanha duplicada.
+              // Melhor interromper e pular conta; usuário verifica manualmente no dashboard.
+              if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
+                addLog('ERROR', '⛔ Timeout — NÃO retentando p/ evitar duplicata. Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' no TikTok Ads Manager.')
+                hadTimeout = true
+                break
+              }
               if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
             }
           }
-          if (!retryOk) addLog('ERROR', '❌ Campanha ' + (cp+1) + ' falhou após 3 tentativas')
+          if (!retryOk && !hadTimeout) addLog('ERROR', '❌ Campanha ' + (cp+1) + ' falhou após 3 tentativas')
+          // Se deu 504, pula resto das campanhas desta conta — provavelmente está com problema
+          if (hadTimeout) break
         }
       }
     } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
@@ -1251,6 +1301,7 @@ function StepLaunch() {
           : undefined,
       }
 
+      const displayCardCache: Record<string, string> = {}
       for (let ai = 0; ai < selectedAccounts.length; ai++) {
         const acc = selectedAccounts[ai]
         addLog('INFO', '━━━ Conta ' + (ai+1) + '/' + selectedAccounts.length + ': ' + (acc.advertiser_name || acc.advertiser_id) + ' ━━━')
@@ -1258,13 +1309,38 @@ function StepLaunch() {
         if (ai > 0) { addLog('INFO', '⏳ Aguardando antes da próxima conta...'); await rndWait(120000, 180000) }
 
         let accountNoPermission = false
+
+        // Pré-autoriza spark (só AUTH_CODE) — tira 2-5s do envelope Vercel
+        const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
+        if (identityType === 'AUTH_CODE' && sparkCodes.length > 0) {
+          const accProxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+          const codeForAccount = sparkCodes[ai % sparkCodes.length]
+          addLog('DEBUG', '🔐 Pré-autorizando spark...')
+          try {
+            const sr: any = await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy)
+            if (sr.ok) {
+              preAuthorizedSparks[codeForAccount] = { identity_id: sr.identity_id, item_id: sr.item_id }
+              addLog('OK', '✅ Spark pré-autorizado')
+            } else {
+              addLog('WARN', '⚠️ Spark: ' + (sr.error || '?'))
+              allErrors.push({ account: acc.advertiser_id, step: 'spark', error: sr.error })
+              if (sr.permanent) { addLog('WARN', '⛔ Sem permissão — pulando'); continue }
+              continue
+            }
+          } catch(e: any) {
+            addLog('ERROR', '❌ Pré-autorização falhou: ' + e.message)
+            allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
+            continue
+          }
+        }
+
         for (let cp = 0; cp < campsPerAcc; cp++) {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
           if (accountNoPermission) break
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
           setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai }
+          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai, pre_authorized_sparks: preAuthorizedSparks, display_card_cache: displayCardCache }
           try {
             const r = await api.launchManual(singlePayload)
             if (r.code === 0 && r.data) {
@@ -1272,6 +1348,7 @@ function StepLaunch() {
               totalResult.campaigns += d.campaigns || 0
               totalResult.adgroups += d.adgroups || 0
               totalResult.ads += d.ads || 0
+              if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
               if (d.logs) d.logs.forEach((l: any) => {
                 const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                 addLog(cat, l.message)
@@ -1285,7 +1362,14 @@ function StepLaunch() {
               }
               addLog('OK', 'Campanha ' + (cp+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
             } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
-          } catch(e: any) { addLog('ERROR', 'Erro de rede: ' + e.message) }
+          } catch(e: any) {
+            addLog('ERROR', 'Erro de rede: ' + e.message)
+            // 504 → pula resto das campanhas desta conta (risco de duplicata)
+            if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
+              addLog('ERROR', '⛔ Timeout — pulando conta. Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' manualmente.')
+              accountNoPermission = true
+            }
+          }
         }
       }
     } catch(err: any) { addLog('ERROR', 'Fatal: ' + err.message) }
@@ -1371,11 +1455,16 @@ function StepLaunch() {
         setProgress(Math.round(45 + ((ai / selectedAccounts.length) * 50)))
         addLog('INFO', '🏗️ Batch 1/' + (1 + Math.ceil(remainingCodes.length / BATCH_SIZE)) + ': criando camp+ag+' + firstBatchCodes.length + ' ads...')
 
+        // Sufixo único p/ evitar anti-dup do TikTok quando o mesmo offerName é testado
+        // mais de uma vez na mesma conta (adgroup_name idêntico dispara "Avoid sending
+        // the same request repeatedly"). Só no Teste CTV — produção já tem start_seq.
+        const testSuffix = '_' + Math.random().toString(36).substring(2, 6).toUpperCase()
+
         const singlePayload = {
           accounts: [acc],
-          campaign_name: 'TESTE ' + offerName,
-          adgroup_name: 'AG TESTE ' + offerName,
-          ad_name: 'TESTE ' + offerName,
+          campaign_name: 'TESTE ' + offerName + testSuffix,
+          adgroup_name: 'AG TESTE ' + offerName + testSuffix,
+          ad_name: 'TESTE ' + offerName + testSuffix,
           spark_codes: firstBatchCodes,
           rotation: false,
           campaigns_per_account: 1,
@@ -1455,7 +1544,7 @@ function StepLaunch() {
                   display_card_id: displayCardId,
                   spark_codes: batchCodes,
                   pre_authorized_sparks: preAuthorizedSparks,
-                  ad_name: 'TESTE ' + offerName,
+                  ad_name: 'TESTE ' + offerName + testSuffix,
                   ad_texts: adTexts,
                   landing_page_url: accountDomain,
                   proxy_list: proxyList,
@@ -1556,11 +1645,13 @@ function StepLaunch() {
         addLog('INFO', '✅ ' + authorizedCount + '/' + sparkCodes.length + ' sparks autorizados')
 
         setProgress(Math.round(45 + ((ai / selectedAccounts.length) * 50)))
+        // Sufixo único p/ evitar anti-dup do TikTok em re-testes na mesma conta
+        const testSuffix = '_' + Math.random().toString(36).substring(2, 6).toUpperCase()
         const singlePayload = {
           accounts: [acc],
-          campaign_name: 'TESTE ' + offerName,
-          adgroup_name: 'AG TESTE ' + offerName,
-          ad_name: 'TESTE ' + offerName,
+          campaign_name: 'TESTE ' + offerName + testSuffix,
+          adgroup_name: 'AG TESTE ' + offerName + testSuffix,
+          ad_name: 'TESTE ' + offerName + testSuffix,
           objective_type: objective,
           budget_mode: 'cbo',
           budget: testBudget,
@@ -1671,6 +1762,8 @@ function StepLaunch() {
     let totalResult = { campaigns: 0, adgroups: 0, ads: 0 }
     let allErrors: any[] = []
     const totalCampsPerAccount = smartCount + manualCount
+    // Cache cross-call p/ economizar 2-5s por chamada
+    const displayCardCache: Record<string, string> = {}
 
     const billingByObjective: Record<string, string> = { CONVERSIONS: 'OCPM', TRAFFIC: 'CPC', REACH: 'CPM', VIDEO_VIEWS: 'CPV', ENGAGEMENT: 'OCPM' }
     const goalByObjective: Record<string, string> = { CONVERSIONS: 'CONVERT', TRAFFIC: 'CLICK', REACH: 'REACH', VIDEO_VIEWS: 'ENGAGED_VIEW', ENGAGEMENT: 'FOLLOWERS' }
@@ -1714,6 +1807,33 @@ function StepLaunch() {
         let seqCounter = 1
         let accountNoPermission = false
 
+        // Pré-autoriza spark (fora do envelope Vercel 60s) — mesmo code serve p/ Smart+ e Manual
+        const accProxy = proxyList.length > 0 ? proxyList[ai % proxyList.length] : undefined
+        const codeForAccount = sparkCodes.length > 0 ? sparkCodes[ai % sparkCodes.length] : null
+        const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
+        let sparkFailed = false
+        if (codeForAccount) {
+          addLog('DEBUG', '🔐 Pré-autorizando spark...')
+          try {
+            const sr: any = await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy)
+            if (sr.ok) {
+              preAuthorizedSparks[codeForAccount] = { identity_id: sr.identity_id, item_id: sr.item_id }
+              addLog('OK', '✅ Spark pré-autorizado: identity=' + sr.identity_id)
+            } else {
+              addLog('WARN', '⚠️ Spark: ' + (sr.error || '?'))
+              allErrors.push({ account: acc.advertiser_id, step: 'spark', error: sr.error })
+              if (sr.permanent) { accountNoPermission = true }
+              sparkFailed = true
+            }
+          } catch(e: any) {
+            addLog('ERROR', '❌ Pré-autorização falhou: ' + e.message)
+            allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
+            sparkFailed = true
+          }
+        }
+        if (accountNoPermission) { addLog('WARN', '⛔ Sem permissão — pulando conta'); continue }
+        if (sparkFailed) { addLog('WARN', '⚠️ Sem spark — pulando conta'); continue }
+
         // Smart+ campaigns
         if (smartCount > 0) {
           addLog('INFO', '🔥 Smart+ — ' + smartCount + ' campanha(s)...')
@@ -1722,15 +1842,18 @@ function StepLaunch() {
             if (seqCounter > 1) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
             setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
 
-            const singlePayload = { ...smartPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
+            const singlePayload = { ...smartPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai, pre_authorized_sparks: preAuthorizedSparks, display_card_cache: displayCardCache }
             let retryOk = false
+            let hadTimeout = false
             for (let attempt = 0; attempt < 3; attempt++) {
+              if (abortRef.current) { addLog('WARN', '⛔ Interrompido durante retry'); break }
               try {
                 const r = await api.launchSmart(singlePayload)
                 if (r.code === 0 && r.data) {
                   const d = r.data as any
                   totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
                   if (d.cta_cache) { Object.assign(ctaCacheSaved, d.cta_cache); localStorage.setItem('hawklaunch_cta_cache', JSON.stringify(ctaCacheSaved)) }
+                  if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
                   if (d.logs) d.logs.forEach((l: any) => {
                     const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                     addLog(cat, l.message)
@@ -1744,11 +1867,17 @@ function StepLaunch() {
                 } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
                 retryOk = true; break
               } catch(e: any) {
-                addLog('ERROR', 'Fatal: ' + e.message)
+                addLog('ERROR', 'Erro de rede: ' + e.message)
+                if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
+                  addLog('ERROR', '⛔ Timeout — NÃO retentando (evita duplicata). Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' manualmente.')
+                  hadTimeout = true
+                  break
+                }
                 if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
               }
             }
-            if (!retryOk) addLog('ERROR', '❌ Campanha Smart+ ' + seqCounter + ' falhou após 3 tentativas')
+            if (!retryOk && !hadTimeout) addLog('ERROR', '❌ Campanha Smart+ ' + seqCounter + ' falhou após 3 tentativas')
+            if (hadTimeout) { accountNoPermission = true; break }
             seqCounter++
           }
         }
@@ -1761,14 +1890,17 @@ function StepLaunch() {
             if (seqCounter > 1) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
             setProgress(Math.round(15 + (((ai * totalCampsPerAccount + seqCounter - 1) / (selectedAccounts.length * totalCampsPerAccount)) * 80)))
 
-            const singlePayload = { ...manualPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai }
+            const singlePayload = { ...manualPayload, accounts: [acc], campaigns_per_account: 1, start_seq: seqCounter, proxy_list: proxyList, account_index: ai, pre_authorized_sparks: preAuthorizedSparks, display_card_cache: displayCardCache }
             let retryOk = false
+            let hadTimeout = false
             for (let attempt = 0; attempt < 3; attempt++) {
+              if (abortRef.current) { addLog('WARN', '⛔ Interrompido durante retry'); break }
               try {
                 const r = await api.launchManual(singlePayload)
                 if (r.code === 0 && r.data) {
                   const d = r.data as any
                   totalResult.campaigns += d.campaigns || 0; totalResult.adgroups += d.adgroups || 0; totalResult.ads += d.ads || 0
+                  if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
                   if (d.logs) d.logs.forEach((l: any) => {
                     const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
                     addLog(cat, l.message)
@@ -1782,11 +1914,17 @@ function StepLaunch() {
                 } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
                 retryOk = true; break
               } catch(e: any) {
-                addLog('ERROR', 'Fatal: ' + e.message)
+                addLog('ERROR', 'Erro de rede: ' + e.message)
+                if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
+                  addLog('ERROR', '⛔ Timeout — NÃO retentando (evita duplicata). Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' manualmente.')
+                  hadTimeout = true
+                  break
+                }
                 if (attempt < 2) { addLog('INFO', '🔄 Retry ' + (attempt+2) + '/3 em ' + (10+attempt*10) + 's...'); await rndWait((10+attempt*10)*1000, (15+attempt*10)*1000) }
               }
             }
-            if (!retryOk) addLog('ERROR', '❌ Campanha Manual ' + seqCounter + ' falhou após 3 tentativas')
+            if (!retryOk && !hadTimeout) addLog('ERROR', '❌ Campanha Manual ' + seqCounter + ' falhou após 3 tentativas')
+            if (hadTimeout) { accountNoPermission = true; break }
             seqCounter++
           }
         }

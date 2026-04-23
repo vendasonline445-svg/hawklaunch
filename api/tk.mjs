@@ -804,8 +804,10 @@ export default async function handler(req, res) {
         var noPermission = false
         for (var s = 0; s < codesForAccount.length; s++) {
           var code = codesForAccount[s]
-          // test_mode: sparks já autorizados pelo frontend — pula chamada à API
-          if (testMode && preAuthSparks[code]) {
+          // sparks já autorizados pelo frontend — pula chamada à API.
+          // Move autorização para fora do envelope Vercel 60s e evita 504s que gerariam
+          // request_ids novos no retry (= campanhas duplicadas). Frontend autoriza 1x por conta.
+          if (preAuthSparks[code]) {
             sparkAuthCache[advId][code] = { ok: true, identity_id: preAuthSparks[code].identity_id, item_id: preAuthSparks[code].item_id }
             L(advId, '✅ (pre-auth) spark ' + (s+1) + '/' + codesForAccount.length)
             results.spark_authorized++
@@ -888,9 +890,11 @@ export default async function handler(req, res) {
           if (!pixelId) { L(advId, '⚠️ No pixel'); results.errors.push({ account: advId, step: 'pixel', error: 'No pixel' }); continue }
         }
 
-        // Display Card (interactive add-on)
-        var displayCardId = null
-        if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
+        // Display Card (interactive add-on) — reusa card_id cacheado pelo frontend entre calls
+        var displayCardId = (body.display_card_cache && body.display_card_cache[advId]) || null
+        if (displayCardId) {
+          L(advId, '✅ Display Card reutilizado: ' + displayCardId)
+        } else if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
           L(advId, 'Creating Display Card...')
           try {
             var cardRes = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || 'SHOP_NOW', body.display_card.image_id)
@@ -905,8 +909,8 @@ export default async function handler(req, res) {
             L(advId, '❌ Display Card error: ' + e.message)
           }
         }
-        // Retorna display_card_id para o frontend usar nos batches seguintes
-        if (testMode) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardId }
+        // Sempre retorna display_card_id — frontend cacheia p/ reutilizar nos próximos calls
+        if (displayCardId) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardId }
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
@@ -1207,8 +1211,8 @@ export default async function handler(req, res) {
           var codesForAccount = body.rotation ? [body.spark_codes[accountIndex % body.spark_codes.length]] : body.spark_codes
           for (var s = 0; s < codesForAccount.length; s++) {
             var code = codesForAccount[s]
-            // test_mode: sparks já autorizados pelo frontend — pula chamada à API
-            if (testModeM && preAuthSparksM[code]) {
+            // sparks já autorizados pelo frontend — pula chamada à API (evita 504 + duplicatas)
+            if (preAuthSparksM[code]) {
               sparkAuthCache[code] = { ok: true, identity_id: preAuthSparksM[code].identity_id, item_id: preAuthSparksM[code].item_id }
               L(advId, '✅ (pre-auth) spark ' + (s+1) + '/' + codesForAccount.length)
               continue
@@ -1247,9 +1251,11 @@ export default async function handler(req, res) {
           }
         }
 
-        // Display Card (interactive add-on)
-        var displayCardIdM = null
-        if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
+        // Display Card (interactive add-on) — reusa card_id cacheado pelo frontend entre calls
+        var displayCardIdM = (body.display_card_cache && body.display_card_cache[advId]) || null
+        if (displayCardIdM) {
+          L(advId, '✅ Display Card reutilizado: ' + displayCardIdM)
+        } else if (body.display_card && (body.display_card.image_url || body.display_card.image_id)) {
           L(advId, 'Creating Display Card...')
           try {
             var cardResM = await createDisplayCard(token, advId, accountProxy, body.display_card.image_url, body.display_card.title, body.display_card.cta || body.call_to_action || 'SHOP_NOW', body.display_card.image_id)
@@ -1264,6 +1270,7 @@ export default async function handler(req, res) {
             L(advId, '❌ Display Card error: ' + e.message)
           }
         }
+        if (displayCardIdM) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardIdM }
 
         var campaignsPerAccount = body.campaigns_per_account || 1
 
