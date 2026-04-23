@@ -764,7 +764,9 @@ export default async function handler(req, res) {
     if (action === 'spark_authorize' && req.method === 'POST') {
       var body = req.body || {}
       if (!body.advertiser_id || !body.auth_code) return res.status(400).json({ error: 'advertiser_id and auth_code required' })
-      var sparkProxy = stickifyProxy(body.proxy || null, body.advertiser_id)
+      // skip_sticky: alguns providers rejeitam a sintaxe genérica "-session-XXX" → 407.
+      // Frontend retenta com skip_sticky=true quando a primeira tentativa falha com 407.
+      var sparkProxy = body.skip_sticky ? (body.proxy || null) : stickifyProxy(body.proxy || null, body.advertiser_id)
       return res.json(await authorizeSpark(token, body.advertiser_id, body.auth_code, sparkProxy))
     }
 

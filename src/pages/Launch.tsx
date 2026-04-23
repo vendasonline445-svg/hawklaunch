@@ -1124,13 +1124,32 @@ function StepLaunch() {
         const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
         let accountNoPermission = false
 
-        // Identifica o slot do proxy (ai % N) + host mascarado para diagnóstico
+        // Mascara proxy mostrando host:port (formatos: host:port:user:pass, user:pass@host:port, http://...)
+        const maskProxy = (raw?: string): string => {
+          if (!raw) return 'sem proxy'
+          const s = raw.replace(/^https?:\/\//, '').trim()
+          if (s.includes('@')) return s.split('@').pop() || s
+          const parts = s.split(':')
+          if (parts.length === 4) return parts[0] + ':' + parts[1]
+          return s
+        }
         const proxyLabel = accProxy
-          ? '#' + ((ai % proxyList.length) + 1) + ' (' + accProxy.replace(/^https?:\/\//, '').replace(/:[^@:]+@/, ':***@').split(':').slice(-2).join(':') + ')'
+          ? '#' + ((ai % proxyList.length) + 1) + ' (' + maskProxy(accProxy) + ')'
           : 'sem proxy'
         addLog('DEBUG', '🔐 Pré-autorizando spark via proxy ' + proxyLabel + '...')
+
+        // Tenta com sticky session. Se falhar com 407 (alguns providers rejeitam -session-XXX),
+        // retenta sem sticky uma única vez — mantém anti-detecção quando possível, mas prefere
+        // autorizar a falhar por incompatibilidade de sintaxe.
+        const tryAuthSpark = async (skipSticky: boolean): Promise<any> =>
+          await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy, skipSticky)
+
         try {
-          const sr: any = await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy)
+          let sr: any = await tryAuthSpark(false)
+          if (!sr.ok && typeof sr.error === 'string' && sr.error.includes('407')) {
+            addLog('WARN', '⚠️ Proxy rejeitou sticky session (407). Tentando sem sticky...')
+            sr = await tryAuthSpark(true)
+          }
           if (sr.ok) {
             preAuthorizedSparks[codeForAccount] = { identity_id: sr.identity_id, item_id: sr.item_id }
             addLog('OK', '✅ Spark pré-autorizado: identity=' + sr.identity_id)
