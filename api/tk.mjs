@@ -368,19 +368,25 @@ function proxyForAccount(proxyList, accountIndex) {
   return proxyList[accountIndex % proxyList.length]
 }
 
-// Injeta sticky session id no username do proxy para manter o MESMO IP real
-// residencial por advertiser em todas as chamadas de uma operação. Sem isso,
-// proxies "rotativas" mudam o IP a cada request — TikTok vê IP hopping (bot).
+// Injeta sticky session id no proxy para manter o MESMO IP real residencial
+// por advertiser em todas as chamadas de uma operação. Sem isso, proxies
+// "rotativas" mudam o IP a cada request — TikTok vê IP hopping (bot).
 //
-// Cada provider usa uma sintaxe de sticky DIFERENTE. Detectamos pelo host:
+// Cada provider usa uma sintaxe de sticky DIFERENTE (posição + delimitador).
+// Detectamos pelo host:
 //
 //   DataImpulse (docs.dataimpulse.com/proxies/parameters/session-id):
-//     Delimitadores: "__" separa login de params, "." separa key=value, ";" separa params
+//     Session no USERNAME. "__" separa login de params, "." separa key=value, ";" separa params
 //     Formato: username__sessid.NUMERO  OU  username__cr.br;sessid.NUMERO
 //     Duração: ~30 min por session id
 //
-//   Bright Data / IPRoyal / padrão da indústria:
-//     Formato: username-session-XXX
+//   IPRoyal (docs.iproyal.com/proxies/residential/proxy/rotation):
+//     Session no PASSWORD. "_" separa params. Session id = 8 chars alfanuméricos.
+//     Formato: password_country-br_session-XXXXXXXX_lifetime-30m
+//     Duração: opcional via _lifetime- (1s a 7d, unidade única)
+//
+//   Bright Data / genérico:
+//     Session no USERNAME com "-session-sXXX"
 //
 // Se proxy é sem auth ou formato inválido, retorna original (não quebra).
 function stickifyProxy(proxyRaw, advertiserId) {
@@ -413,23 +419,27 @@ function stickifyProxy(proxyRaw, advertiserId) {
   var sessionNum = String(advertiserId).replace(/\D/g, '').slice(-10) // só dígitos
   if (!sessionNum) return proxyRaw
 
-  var newUser
+  var newUser = user
+  var newPass = pass
   var hostLower = host.toLowerCase()
 
   if (hostLower.includes('dataimpulse.com')) {
     // DataImpulse: username__sessid.NUMERO (ou ;sessid.NUMERO se já tem params)
     if (/__[^:]*sessid\.[^;]+/.test(user)) {
-      // Já tem sessid — substitui
       newUser = user.replace(/sessid\.[^;]+/, 'sessid.' + sessionNum)
     } else if (user.includes('__')) {
-      // Tem outros params (cr, city, asn) — append sessid no final
       newUser = user + ';sessid.' + sessionNum
     } else {
-      // Username limpo — inicia bloco de params com __
       newUser = user + '__sessid.' + sessionNum
     }
+  } else if (hostLower.includes('iproyal.com')) {
+    // IPRoyal: session no PASSWORD. 8 chars alfanuméricos (pad 8 zeros à esquerda se adv_id for curto).
+    // Remove _session-/_lifetime- anteriores (idempotente) e reaplica.
+    var ipSession = sessionNum.slice(-8).padStart(8, '0')
+    newPass = pass.replace(/_session-[^_]+/g, '').replace(/_lifetime-[^_]+/g, '')
+    newPass = newPass + '_session-' + ipSession + '_lifetime-30m'
   } else {
-    // Padrão da indústria (Bright Data, IPRoyal, genérico): -session-sXXX
+    // Padrão Bright Data / genérico: -session-sXXX no USERNAME
     var sessionTag = 's' + sessionNum
     if (/-session-[^-]+/.test(user)) {
       newUser = user.replace(/-session-[^-]+/, '-session-' + sessionTag)
@@ -437,7 +447,7 @@ function stickifyProxy(proxyRaw, advertiserId) {
       newUser = user + '-session-' + sessionTag
     }
   }
-  return 'http://' + newUser + ':' + pass + '@' + host + ':' + port
+  return 'http://' + newUser + ':' + newPass + '@' + host + ':' + port
 }
 
 export default async function handler(req, res) {

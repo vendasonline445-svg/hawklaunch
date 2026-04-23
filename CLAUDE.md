@@ -54,8 +54,9 @@ Toda chamada para TikTok passa por `tt()` → `ttOnce()` que aplicam:
   - `proxyForAccount(list, i)` = `list[i % list.length]` (mapeamento permanente conta↔slot).
   - `stickifyProxy(proxyRaw, advertiserId)` injeta sticky session id no username. **Sintaxe depende do provider** (detectado pelo host):
     - **DataImpulse** (`docs.dataimpulse.com/proxies/parameters/session-id`): formato `username__sessid.NUMERO`. Delimitadores: `__` separa login de params, `.` separa key=value, `;` separa params. Duração fixa ~30 min. Ex: `user:pass@gw.dataimpulse.com:823` → `user__sessid.9409211409:pass@gw.dataimpulse.com:823`. Se já tem `__cr.br` ou outros params, preserva e faz append com `;sessid.XXX`.
-    - **Bright Data / IPRoyal / genérico**: formato `username-session-sXXX` (hífen).
-  - Session id = últimos 10 dígitos numéricos de `advertiser_id` (para DataImpulse puro; prefixado com `'s'` para padrão hífen).
+    - **IPRoyal** (`docs.iproyal.com/proxies/residential/proxy/rotation`): session vai no **password**, não no username. Formato: `password_session-XXXXXXXX_lifetime-30m`. Session ID = 8 chars alfanuméricos (pad com zeros à esquerda se adv_id for curto). `_lifetime-` é opcional (1s a 7d, unidade única). Ordem dos params underscored não importa. Stickify remove `_session-*` e `_lifetime-*` anteriores antes de anexar (idempotente).
+    - **Bright Data / genérico**: formato `username-session-sXXX` (hífen no username).
+  - Session id = últimos 10 dígitos numéricos de `advertiser_id` (DataImpulse/Bright Data). IPRoyal usa últimos 8 dígitos padded com zeros.
   - Aplicado em todos handlers com `advertiser_id`: `launch_smart`, `launch_manual`, `disable_campaigns`, `delete_campaigns`, `ad_list_review`, `ad_appeal`, `spark_authorize`, `spark_info`.
   - **Resultado:** mesma conta sempre do mesmo IP real (padrão humano); contas diferentes em IPs diferentes dentro do mesmo proxy_raw (pool distribuído).
   - **Ao adicionar suporte a novo provider**, replicar o pattern `if (hostLower.includes('X.com')) { ...formato Y... }` dentro de `stickifyProxy`. Sempre conferir a doc oficial do provider — cada um usa delimitador diferente.
