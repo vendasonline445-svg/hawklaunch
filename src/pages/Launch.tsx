@@ -1124,19 +1124,23 @@ function StepLaunch() {
         const preAuthorizedSparks: Record<string, {identity_id: string, item_id: string}> = {}
         let accountNoPermission = false
 
-        addLog('DEBUG', '🔐 Pré-autorizando spark...')
+        // Identifica o slot do proxy (ai % N) + host mascarado para diagnóstico
+        const proxyLabel = accProxy
+          ? '#' + ((ai % proxyList.length) + 1) + ' (' + accProxy.replace(/^https?:\/\//, '').replace(/:[^@:]+@/, ':***@').split(':').slice(-2).join(':') + ')'
+          : 'sem proxy'
+        addLog('DEBUG', '🔐 Pré-autorizando spark via proxy ' + proxyLabel + '...')
         try {
           const sr: any = await api.authorizeSpark(acc.advertiser_id, codeForAccount, accProxy)
           if (sr.ok) {
             preAuthorizedSparks[codeForAccount] = { identity_id: sr.identity_id, item_id: sr.item_id }
             addLog('OK', '✅ Spark pré-autorizado: identity=' + sr.identity_id)
           } else {
-            addLog('WARN', '⚠️ Spark: ' + (sr.error || '?'))
+            addLog('WARN', '⚠️ Spark: ' + (sr.error || '?') + ' | proxy ' + proxyLabel)
             allErrors.push({ account: acc.advertiser_id, step: 'spark', error: sr.error })
             if (sr.permanent) accountNoPermission = true
           }
         } catch(e: any) {
-          addLog('ERROR', '❌ Pré-autorização falhou: ' + e.message)
+          addLog('ERROR', '❌ Pré-autorização falhou: ' + e.message + ' | proxy ' + proxyLabel)
           allErrors.push({ account: acc.advertiser_id, step: 'spark', error: e.message })
           // Sem spark não adianta tentar — pula conta
           continue
