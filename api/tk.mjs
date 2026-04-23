@@ -165,7 +165,17 @@ async function ttOnce(endpoint, token, method, body, proxyRaw) {
   if (agent) opts.agent = agent
   opts.signal = AbortSignal.timeout(20000)
   var r = await nodeFetch(TIKTOK_API + endpoint, opts)
-  return r.json()
+  // Lê como text primeiro: se o proxy retornar body vazio/HTML, r.json() explodiria com
+  // "Unexpected end of JSON input" sem pista do motivo. Status HTTP + primeiros bytes ajudam diagnóstico.
+  var text = await r.text()
+  if (!text || text.trim().length === 0) {
+    throw new Error('resposta vazia (HTTP ' + r.status + (proxyUrl ? ' via proxy' : '') + ')')
+  }
+  try {
+    return JSON.parse(text)
+  } catch(e) {
+    throw new Error('não-JSON (HTTP ' + r.status + '): ' + text.substring(0, 120).replace(/\s+/g, ' '))
+  }
 }
 
 // Erros que não adianta tentar de novo — falha permanente
@@ -255,7 +265,8 @@ async function authorizeSpark(token, advertiserId, authCode, proxyRaw) {
       lastError = e.message
     }
   }
-  return { ok: false, error: lastError + ' (3 tentativas)' }
+  // tt() já adiciona "(3 tentativas)" quando o erro vem dele — evita duplicar o suffix
+  return { ok: false, error: lastError.includes('(3 tentativas)') ? lastError : lastError + ' (3 tentativas)' }
 }
 
 var WANTED_CTAS = ['buy here','shop','shop today','buy today','order today','buy now','show now','order here','learn more','shop now']
