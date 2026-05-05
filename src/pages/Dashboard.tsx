@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { api, clearToken } from '@/lib/api'
 
-const TIKTOK_AUTH_URL = `https://business-api.tiktok.com/portal/auth?app_id=7617705058569814033&state=hl_${encodeURIComponent(window.location.origin)}&rid=hl${Date.now()}&redirect_uri=${encodeURIComponent('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/tiktok-oauth-callback')}`
+const TIKTOK_AUTH_URL = `https://business-api.tiktok.com/portal/auth?app_id=7617705058569814033&state=hawklaunch&rid=hl${Date.now()}&redirect_uri=${encodeURIComponent('https://slcuaijctwvmumgtpxgv.supabase.co/functions/v1/tiktok-oauth-callback')}`
 
 export default function Dashboard() {
   const navigate = useNavigate()
