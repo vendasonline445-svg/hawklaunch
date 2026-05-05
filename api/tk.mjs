@@ -675,16 +675,26 @@ export default async function handler(req, res) {
     if (action === 'ad_appeal' && req.method === 'POST') {
       var body = req.body
       var adId = body && body.ad_id
+      var adgroupId = body && body.adgroup_id
       var advId = body && body.advertiser_id
-      if (!advId || !adId) return res.status(400).json({ error: 'advertiser_id and ad_id required' })
+      if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
+      if (!adgroupId && !adId) return res.status(400).json({ error: 'adgroup_id or ad_id required' })
       var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
-      // Appeal para Upgraded Smart Plus ads: POST /smart_plus/ad/appeal/
-      var result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
-        advertiser_id: advId,
-        smart_plus_ad_id: adId,
-        appeal_reason: "I don't think there's a violation",
-        appeal_description: "I don't think there's a violation",
-      }, proxyRaw)
+      var result
+      if (adgroupId) {
+        // Manual campaign appeal: POST /adgroup/appeal/
+        var appealPayload = { advertiser_id: advId, adgroup_id: adgroupId, appeal_reason: "I don't think there's a violation" }
+        if (adId) appealPayload.ad_id = adId
+        result = await tt('/adgroup/appeal/', token, 'POST', appealPayload, proxyRaw)
+      } else {
+        // Smart+ appeal: POST /smart_plus/ad/appeal/
+        result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
+          advertiser_id: advId,
+          smart_plus_ad_id: adId,
+          appeal_reason: "I don't think there's a violation",
+          appeal_description: "I don't think there's a violation",
+        }, proxyRaw)
+      }
       return res.json(result)
     }
 

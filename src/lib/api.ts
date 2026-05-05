@@ -83,10 +83,10 @@ export var api = {
   listRejectedAds: (advId: string, proxy?: string) =>
     request('a=ad_list_review&advertiser_id=' + advId + (proxy ? '&proxy=' + encodeURIComponent(proxy) : '')),
 
-  // appeal em nível de ad: POST /appeal/ad/ com reason NO_VIOLATION
-  appealAd: (advId: string, adId: string, proxy?: string) => request('a=ad_appeal', {
+  // appeal: usa /adgroup/appeal/ (manual) ou /smart_plus/ad/appeal/ (smart+)
+  appealAd: (advId: string, adId: string, adgroupId?: string, proxy?: string) => request('a=ad_appeal', {
     method: 'POST',
-    body: JSON.stringify({ advertiser_id: advId, ad_id: adId, proxy: proxy || null }),
+    body: JSON.stringify({ advertiser_id: advId, ad_id: adId, adgroup_id: adgroupId || null, proxy: proxy || null }),
   }),
 
   uploadCardImage: (advertiserId: string, base64: string, fileName: string) => request('a=upload_card_image', {

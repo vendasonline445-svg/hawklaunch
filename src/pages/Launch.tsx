@@ -1256,7 +1256,7 @@ function StepLaunch() {
     const adTexts = (localStorage.getItem('hawklaunch_ad_texts') || '').split('\n').filter((t: string) => t.trim())
     const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '50')
     const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
-    const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '1')
+    const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_manual_camps_per_account') || '1')
     const adgroupsPerCamp = parseInt(localStorage.getItem('hawklaunch_adgroups_per_campaign') || '1')
     const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
     const autoTarget = localStorage.getItem('hawklaunch_manual_auto_target') !== 'false'
@@ -2717,8 +2717,8 @@ function ManualStepStructure() {
         <div>
           <label className="label mb-1.5 block">Campanhas / conta</label>
           <input className="input" type="number" min={1} max={20}
-            defaultValue={localStorage.getItem('hawklaunch_camps_per_account') || '1'}
-            onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)} />
+            defaultValue={localStorage.getItem('hawklaunch_manual_camps_per_account') || '1'}
+            onChange={e => localStorage.setItem('hawklaunch_manual_camps_per_account', e.target.value)} />
         </div>
         <div>
           <label className="label mb-1.5 block">Conjuntos / campanha</label>
