@@ -576,7 +576,7 @@ export default async function handler(req, res) {
       try {
         var spPage = 1
         while (true) {
-          var spRes = await tt('/smart_plus/ad/get/?advertiser_id=' + advId + '&page_size=100&page=' + spPage, token, 'GET', null, proxyRaw)
+          var spRes = await tt('/smart_plus/ad/get/?advertiser_id=' + advId + '&page_size=100&page=' + spPage + '&filtering=' + encodeURIComponent(JSON.stringify({ primary_status: 'STATUS_ALL' })), token, 'GET', null, proxyRaw)
           if (spRes.code !== 0) break
           var spList = (spRes.data && spRes.data.list) ? spRes.data.list : []
           smartPlusAds = smartPlusAds.concat(spList)
@@ -625,6 +625,7 @@ export default async function handler(req, res) {
           var manRes = await tt(
             '/ad/get/?advertiser_id=' + advId
               + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status', 'operation_status']))
+              + '&filtering=' + encodeURIComponent(JSON.stringify({ primary_status: 'STATUS_ALL' }))
               + '&page_size=100&page=' + manPage,
             token, 'GET', null, proxyRaw
           )
