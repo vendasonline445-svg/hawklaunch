@@ -165,7 +165,7 @@ export function Creatives() {
       const item = adsToAppeal[i]
       const label = (item.ad_name || item.ad_id).slice(0, 45)
       try {
-        const r = await api.appealAd(item.advId, item.ad_id, proxy || undefined) as any
+        const r = await api.appealAd(item.advId, item.ad_id, item.adgroup_id || undefined, proxy || undefined) as any
         if (r.code === 0) {
           setAppealLogs(prev => [...prev, `[${ts()}] ✓ ${label} — appeal enviado`])
         } else {
