@@ -1257,6 +1257,7 @@ function StepLaunch() {
     const budget = parseInt(localStorage.getItem('hawklaunch_budget') || '50')
     const adsPerCode = parseInt(localStorage.getItem('hawklaunch_ads_per_code') || '1')
     const campsPerAcc = parseInt(localStorage.getItem('hawklaunch_camps_per_account') || '1')
+    const adgroupsPerCamp = parseInt(localStorage.getItem('hawklaunch_adgroups_per_campaign') || '1')
     const offerName = localStorage.getItem('hawklaunch_offer_name') || 'HL'
     const autoTarget = localStorage.getItem('hawklaunch_manual_auto_target') !== 'false'
     const ageGroupsRaw = localStorage.getItem('hawklaunch_manual_age_groups')
@@ -1307,6 +1308,7 @@ function StepLaunch() {
         video_ids: videoIds,
         rotation: true,
         ads_per_code: adsPerCode,
+        adgroups_per_campaign: adgroupsPerCamp,
         call_to_action: callToAction,
         landing_page_url: destUrl,
         domain_list: domainList,
@@ -2698,15 +2700,24 @@ function ManualStepStructure() {
           <input className="input" type="number" placeholder="0" defaultValue={localStorage.getItem('hawklaunch_manual_bid_price') || ''}
             onChange={e => localStorage.setItem('hawklaunch_manual_bid_price', e.target.value)} />
         </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-4">
         <div>
-          <label className="label mb-1.5 block">Campanhas por conta</label>
+          <label className="label mb-1.5 block">Campanhas / conta</label>
           <input className="input" type="number" min={1} max={20}
             defaultValue={localStorage.getItem('hawklaunch_camps_per_account') || '1'}
             onChange={e => localStorage.setItem('hawklaunch_camps_per_account', e.target.value)} />
         </div>
         <div>
+          <label className="label mb-1.5 block">Conjuntos / campanha</label>
+          <input className="input" type="number" min={1} max={10}
+            defaultValue={localStorage.getItem('hawklaunch_adgroups_per_campaign') || '1'}
+            onChange={e => localStorage.setItem('hawklaunch_adgroups_per_campaign', e.target.value)} />
+        </div>
+        <div>
           <label className="label mb-1.5 block">
-            {localStorage.getItem('hawklaunch_manual_identity_type') === 'AUTH_CODE' ? 'Anúncios por código Spark' : 'Vídeos por ad group'}
+            {localStorage.getItem('hawklaunch_manual_identity_type') === 'AUTH_CODE' ? 'Anúncios / conjunto' : 'Vídeos / conjunto'}
           </label>
           <input className="input" type="number" min={1} max={10}
             defaultValue={localStorage.getItem('hawklaunch_ads_per_code') || '1'}

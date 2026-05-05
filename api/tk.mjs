@@ -1296,6 +1296,7 @@ export default async function handler(req, res) {
         if (displayCardIdM) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardIdM }
 
         var campaignsPerAccount = body.campaigns_per_account || 1
+        var adgroupsPerCampaign = body.adgroups_per_campaign || 1
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
@@ -1340,6 +1341,9 @@ export default async function handler(req, res) {
           results.campaigns++
           if (!testModeM) await humanDelay(3500, 9000)
 
+          for (var ag = 0; ag < adgroupsPerCampaign; ag++) {
+          if (ag > 0) { if (!testModeM) await humanDelay(4000, 8000); else await rndDelay(500, 1000) }
+
           // Ad Group
           var tz = body.timezone || 'America/Sao_Paulo'
           var scheduleStart = body.schedule_start
@@ -1351,7 +1355,7 @@ export default async function handler(req, res) {
             request_id: makeRequestId(),
             advertiser_id: advId,
             campaign_id: campaignId,
-            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
+            adgroup_name: (body.adgroup_name || ('AG ' + campPayload.campaign_name)) + (adgroupsPerCampaign > 1 ? ' ' + String(ag + 1).padStart(2, '0') : ''),
             placement_type: 'PLACEMENT_TYPE_NORMAL',
             placements: ['PLACEMENT_TIKTOK'],
             billing_event: body.billing_event || 'OCPM',
@@ -1579,6 +1583,7 @@ export default async function handler(req, res) {
               }
             }
           }
+          } // ag loop
         }
       }
 
