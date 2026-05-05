@@ -1363,36 +1363,46 @@ function StepLaunch() {
           if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
           if (accountNoPermission) break
           if (cp > 0) { addLog('DEBUG', '⏳ Aguardando entre campanhas...'); await rndWait(4000, 8000) }
-          setProgress(Math.round(15 + (((ai * campsPerAcc + cp) / (selectedAccounts.length * campsPerAcc)) * 80)))
 
-          const singlePayload = { ...payload, accounts: [acc], campaigns_per_account: 1, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai, pre_authorized_sparks: preAuthorizedSparks, display_card_cache: displayCardCache }
-          try {
-            const r = await api.launchManual(singlePayload)
-            if (r.code === 0 && r.data) {
-              const d = r.data as any
-              totalResult.campaigns += d.campaigns || 0
-              totalResult.adgroups += d.adgroups || 0
-              totalResult.ads += d.ads || 0
-              if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
-              if (d.logs) d.logs.forEach((l: any) => {
-                const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
-                addLog(cat, l.message)
-              })
-              if (d.errors && d.errors.length > 0) {
-                allErrors.push(...d.errors)
-                d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
-                if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
-                  accountNoPermission = true
+          let existingCampaignId: string | undefined = undefined
+
+          for (let ag = 0; ag < adgroupsPerCamp; ag++) {
+            if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+            if (ag > 0) { addLog('DEBUG', '⏳ Aguardando entre conjuntos...'); await rndWait(3000, 6000) }
+            setProgress(Math.round(15 + (((ai * campsPerAcc * adgroupsPerCamp + cp * adgroupsPerCamp + ag) / (selectedAccounts.length * campsPerAcc * adgroupsPerCamp)) * 80)))
+
+            const agSuffix = adgroupsPerCamp > 1 ? ' ' + String(ag + 1).padStart(2, '0') : ''
+            const singlePayload = { ...payload, adgroup_name: payload.adgroup_name + agSuffix, accounts: [acc], campaigns_per_account: 1, adgroups_per_campaign: 1, existing_campaign_id: existingCampaignId, start_seq: 1 + (ai * campsPerAcc) + cp, proxy_list: proxyList, account_index: ai, pre_authorized_sparks: preAuthorizedSparks, display_card_cache: displayCardCache }
+            try {
+              const r = await api.launchManual(singlePayload)
+              if (r.code === 0 && r.data) {
+                const d = r.data as any
+                totalResult.campaigns += d.campaigns || 0
+                totalResult.adgroups += d.adgroups || 0
+                totalResult.ads += d.ads || 0
+                if (d.display_card_ids) Object.assign(displayCardCache, d.display_card_ids)
+                if (ag === 0 && d.created && d.created[0]) existingCampaignId = d.created[0].campaign_id
+                if (d.logs) d.logs.forEach((l: any) => {
+                  const cat = l.message.includes('❌') ? 'ERROR' : l.message.includes('✅') ? 'OK' : l.message.includes('⚠') ? 'WARN' : l.message.includes('⏳') ? 'DEBUG' : 'INFO'
+                  addLog(cat, l.message)
+                })
+                if (d.errors && d.errors.length > 0) {
+                  allErrors.push(...d.errors)
+                  d.errors.forEach((e: any) => addLog('ERROR', '[' + (e.step || '?') + '] ' + (e.error || '?') + (e.account ? ' (conta: ' + e.account + ')' : '')))
+                  if (d.errors.some((e: any) => e.step === 'spark' && (e.error || '').toLowerCase().includes('permission'))) {
+                    accountNoPermission = true
+                  }
                 }
+                const agLabel = adgroupsPerCamp > 1 ? ' (conjunto ' + (ag + 1) + '/' + adgroupsPerCamp + ')' : ''
+                addLog('OK', 'Campanha ' + (cp + 1) + agLabel + ': ' + (d.campaigns || 0) + ' camp, ' + (d.adgroups || 0) + ' ag, ' + (d.ads || 0) + ' ads')
+              } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
+            } catch(e: any) {
+              addLog('ERROR', 'Erro de rede: ' + e.message)
+              // 504 → pula conjuntos restantes desta conta (risco de duplicata)
+              if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
+                addLog('ERROR', '⛔ Timeout — pulando conta. Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' manualmente.')
+                accountNoPermission = true
               }
-              addLog('OK', 'Campanha ' + (cp+1) + ': ' + (d.campaigns||0) + ' camp, ' + (d.adgroups||0) + ' ag, ' + (d.ads||0) + ' ads')
-            } else { addLog('ERROR', 'API resposta: ' + JSON.stringify(r).substring(0, 300)) }
-          } catch(e: any) {
-            addLog('ERROR', 'Erro de rede: ' + e.message)
-            // 504 → pula resto das campanhas desta conta (risco de duplicata)
-            if (e.message && (e.message.includes('504') || e.message.includes('timeout'))) {
-              addLog('ERROR', '⛔ Timeout — pulando conta. Verifique ' + (acc.advertiser_name || acc.advertiser_id) + ' manualmente.')
-              accountNoPermission = true
             }
           }
         }

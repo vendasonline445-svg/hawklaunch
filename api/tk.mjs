@@ -1296,20 +1296,26 @@ export default async function handler(req, res) {
         if (displayCardIdM) { results.display_card_ids = results.display_card_ids || {}; results.display_card_ids[advId] = displayCardIdM }
 
         var campaignsPerAccount = body.campaigns_per_account || 1
-        var adgroupsPerCampaign = body.adgroups_per_campaign || 1
+        var existingCampaignId = body.existing_campaign_id || null
 
         for (var cp = 0; cp < campaignsPerAccount; cp++) {
-          var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
           var isCBO = body.budget_mode !== 'abo'
           var convertedBudget = convertBudget(body.budget || 50, accountCurrency)
           var humanBudget = humanizeValue(convertedBudget, 10)
-          if (cp === 0 && accountCurrency !== 'BRL') L(advId, '💱 Budget: R$' + (body.budget || 50) + ' → ' + accountCurrency + ' ' + humanBudget)
-
-          // Campaign — Smart Creative (ACO) requires WEB_CONVERSIONS, not CONVERSIONS
           var effectiveObjective = body.objective_type || 'WEB_CONVERSIONS'
           if (body.identity_type === 'AUTH_CODE' && effectiveObjective === 'CONVERSIONS') effectiveObjective = 'WEB_CONVERSIONS'
 
-          var campPayload = {
+          var campaignId, campPayload
+          if (existingCampaignId) {
+            campaignId = existingCampaignId
+            campPayload = { campaign_name: body.campaign_name || 'HL' }
+            L(advId, '🔗 Conjunto em campanha existente: ' + campaignId)
+          } else {
+          var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
+          if (cp === 0 && accountCurrency !== 'BRL') L(advId, '💱 Budget: R$' + (body.budget || 50) + ' → ' + accountCurrency + ' ' + humanBudget)
+
+          // Campaign — Smart Creative (ACO) requires WEB_CONVERSIONS, not CONVERSIONS
+          campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
@@ -1336,13 +1342,13 @@ export default async function handler(req, res) {
             await rndDelay(1500, 3000)
             continue
           }
-          var campaignId = campRes.data.campaign_id
+          campaignId = campRes.data.campaign_id
           L(advId, '✅ Campaign: ' + campaignId)
           results.campaigns++
           if (!testModeM) await humanDelay(3500, 9000)
+          } // end if/else existing_campaign_id
 
-          for (var ag = 0; ag < adgroupsPerCampaign; ag++) {
-          if (ag > 0) { if (!testModeM) await humanDelay(4000, 8000); else await rndDelay(500, 1000) }
+          for (var ag = 0; ag < 1; ag++) { // ag loop mantido por compatibilidade; iterações controladas pelo frontend
 
           // Ad Group
           var tz = body.timezone || 'America/Sao_Paulo'
