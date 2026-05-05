@@ -11,7 +11,14 @@ const REDIRECT_URL = Deno.env.get("HAWKLAUNCH_URL") || "https://hawklaunch.verce
 serve(async (req) => {
   const url = new URL(req.url)
   const authCode = url.searchParams.get("auth_code") || url.searchParams.get("code")
-  const state = url.searchParams.get("state")
+  const state = url.searchParams.get("state") || ""
+
+  // state = "hl_<encoded-origin>" → extrai o origin do frontend que iniciou o OAuth
+  let redirectBase = REDIRECT_URL
+  if (state.startsWith("hl_")) {
+    const origin = decodeURIComponent(state.slice(3))
+    if (origin.startsWith("https://")) redirectBase = origin
+  }
 
   if (!authCode) {
     return new Response("<html><body><h2>Erro: auth_code não recebido</h2></body></html>", {
@@ -54,7 +61,7 @@ serve(async (req) => {
     }
 
     // Redirect back to HawkLaunch with token
-    const redirectTo = `${REDIRECT_URL}/?connected=true&token=${encodeURIComponent(access_token)}&advertisers=${encodeURIComponent(JSON.stringify(advertiser_ids))}`
+    const redirectTo = `${redirectBase}/?connected=true&token=${encodeURIComponent(access_token)}&advertisers=${encodeURIComponent(JSON.stringify(advertiser_ids))}`
 
     return new Response(null, {
       status: 302,
