@@ -569,107 +569,83 @@ export default async function handler(req, res) {
       if (!advId) return res.status(400).json({ error: 'advertiser_id required' })
       var proxyRaw = stickifyProxy(req.query.proxy || null, advId)
 
-      // Passo 1: buscar todos os Smart Plus ads via /smart_plus/ad/get/
-      // (os ads "Upgraded Smart+" NÃO aparecem no /ad/get/ normal)
-      var allAds = []
-      var page = 1
-      var debugGetResult = null
-      try {
-        while (true) {
-          var ep = '/smart_plus/ad/get/?advertiser_id=' + advId
-            + '&page_size=100&page=' + page
-          var listResult = await tt(ep, token, 'GET', null, proxyRaw)
-          if (page === 1) debugGetResult = { code: listResult.code, msg: listResult.message, keys: listResult.data ? Object.keys(listResult.data) : [] }
-          if (listResult.code !== 0) break  // não retorna erro — pode ter ads normais também
-          var pageAds = (listResult.data && listResult.data.list) ? listResult.data.list : []
-          allAds = allAds.concat(pageAds)
-          var pageInfo = listResult.data && listResult.data.page_info
-          if (!pageInfo || page >= (pageInfo.total_page || 1) || pageAds.length === 0) break
-          page++
-          if (page > 10) break
-        }
-      } catch(e) { debugGetResult = { error: e.message } }
-
-      // Passo 2: se smart_plus/ad/get retornou ads, consultar review_info deles
-      // Senão, tenta /ad/get/ normal como fallback
-      if (allAds.length === 0) {
-        var page2 = 1
-        try {
-          while (true) {
-            var ep2 = '/ad/get/?advertiser_id=' + advId
-              + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status']))
-              + '&page_size=100&page=' + page2
-            var r2 = await tt(ep2, token, 'GET', null, proxyRaw)
-            if (r2.code !== 0) break
-            var pg2 = (r2.data && r2.data.list) ? r2.data.list : []
-            allAds = allAds.concat(pg2)
-            var pi2 = r2.data && r2.data.page_info
-            if (!pi2 || page2 >= (pi2.total_page || 1) || pg2.length === 0) break
-            page2++
-            if (page2 > 10) break
-          }
-        } catch(e) {}
-      }
-
-      if (allAds.length === 0) {
-        return res.json({ code: 0, data: { list: [], total: 0, scanned: 0, debug_get: debugGetResult } })
-      }
-
-      // Extrai o ID correto (smart_plus_ad_id ou ad_id)
-      function getAdId(ad) { return ad.smart_plus_ad_id || ad.ad_id || '' }
-      var adMap = {}
-      allAds.forEach(function(ad) { adMap[getAdId(ad)] = ad })
-
-      // Passo 3: /smart_plus/ad/review_info/ em lotes de 100
-      // extra_info_setting com include_reject_info=true
-      // review_status === 'UNAVAILABLE' → rejeitado
       var rejected = []
-      var debugReview = null
-      var BATCH_SIZE = 100
-      var extraSetting = encodeURIComponent(JSON.stringify({ include_reject_info: true }))
 
-      for (var bi = 0; bi < allAds.length; bi += BATCH_SIZE) {
-        var batch = allAds.slice(bi, bi + BATCH_SIZE)
-        var batchIds = batch.map(getAdId)
-        var idsParam = encodeURIComponent(JSON.stringify(batchIds))
-        try {
-          var rv = await tt(
-            '/smart_plus/ad/review_info/?advertiser_id=' + advId
-              + '&smart_plus_ad_ids=' + idsParam
-              + '&extra_info_setting=' + extraSetting,
+      // === PATH 1: Smart+ ads via /smart_plus/ad/get/ + /smart_plus/ad/review_info/ ===
+      var smartPlusAds = []
+      try {
+        var spPage = 1
+        while (true) {
+          var spRes = await tt('/smart_plus/ad/get/?advertiser_id=' + advId + '&page_size=100&page=' + spPage, token, 'GET', null, proxyRaw)
+          if (spRes.code !== 0) break
+          var spList = (spRes.data && spRes.data.list) ? spRes.data.list : []
+          smartPlusAds = smartPlusAds.concat(spList)
+          var spPi = spRes.data && spRes.data.page_info
+          if (!spPi || spPage >= (spPi.total_page || 1) || spList.length === 0) break
+          spPage++
+          if (spPage > 10) break
+        }
+      } catch(e) {}
+
+      if (smartPlusAds.length > 0) {
+        var spMap = {}
+        smartPlusAds.forEach(function(ad) { spMap[ad.smart_plus_ad_id || ad.ad_id] = ad })
+        var extraSetting = encodeURIComponent(JSON.stringify({ include_reject_info: true }))
+        var BATCH_SIZE = 100
+        for (var bi = 0; bi < smartPlusAds.length; bi += BATCH_SIZE) {
+          var batch = smartPlusAds.slice(bi, bi + BATCH_SIZE)
+          var batchIds = batch.map(function(a) { return a.smart_plus_ad_id || a.ad_id })
+          try {
+            var rv = await tt(
+              '/smart_plus/ad/review_info/?advertiser_id=' + advId
+                + '&smart_plus_ad_ids=' + encodeURIComponent(JSON.stringify(batchIds))
+                + '&extra_info_setting=' + extraSetting,
+              token, 'GET', null, proxyRaw
+            )
+            if (rv.code === 0 && rv.data) {
+              var reviewList = rv.data.smart_plus_ad_review_infos || rv.data.list || []
+              reviewList.forEach(function(item) {
+                if ((item.review_status || '').toUpperCase() === 'UNAVAILABLE') {
+                  var id = item.smart_plus_ad_id || item.ad_id || ''
+                  var base = spMap[id] || {}
+                  rejected.push({ ad_id: id, ad_name: base.ad_name || '', adgroup_id: '', review_status: 'UNAVAILABLE', appeal_status: item.appeal_status || '' })
+                }
+              })
+            }
+          } catch(e) {}
+          if (bi + BATCH_SIZE < smartPlusAds.length) await rndDelay(300, 600)
+        }
+      }
+
+      // === PATH 2: Manual ads via /ad/get/ — rejeição lida direto do secondary_status ===
+      var manualAds = []
+      try {
+        var manPage = 1
+        while (true) {
+          var manRes = await tt(
+            '/ad/get/?advertiser_id=' + advId
+              + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status', 'operation_status']))
+              + '&page_size=100&page=' + manPage,
             token, 'GET', null, proxyRaw
           )
-          if (bi === 0) debugReview = rv  // salva primeira resposta completa para debug
+          if (manRes.code !== 0) break
+          var manList = (manRes.data && manRes.data.list) ? manRes.data.list : []
+          manualAds = manualAds.concat(manList)
+          var manPi = manRes.data && manRes.data.page_info
+          if (!manPi || manPage >= (manPi.total_page || 1) || manList.length === 0) break
+          manPage++
+          if (manPage > 10) break
+        }
+      } catch(e) {}
 
-          if (rv.code === 0 && rv.data) {
-            // Resposta: data.smart_plus_ad_review_infos (array)
-            var reviewList = rv.data.smart_plus_ad_review_infos || rv.data.list || []
-            reviewList.forEach(function(item) {
-              var st = (item.review_status || '').toUpperCase()
-              // UNAVAILABLE = rejeitado; ALL_AVAILABLE/PART_AVAILABLE = aprovado
-              if (st === 'UNAVAILABLE') {
-                var id = item.smart_plus_ad_id || item.ad_id || ''
-                var base = adMap[id] || {}
-                rejected.push({
-                  ad_id: id,
-                  ad_name: base.ad_name || item.ad_name || '',
-                  adgroup_id: base.adgroup_id || '',
-                  review_status: st,
-                  appeal_status: item.appeal_status || '',
-                })
-              }
-            })
-          }
-        } catch(e) { if (bi === 0) debugReview = { error: e.message } }
+      manualAds.forEach(function(ad) {
+        var st = ad.secondary_status || ''
+        if (st.toUpperCase().includes('DENY') || st.toUpperCase().includes('REJECT')) {
+          rejected.push({ ad_id: ad.ad_id || '', ad_name: ad.ad_name || '', adgroup_id: ad.adgroup_id || '', review_status: st, appeal_status: '' })
+        }
+      })
 
-        if (bi + BATCH_SIZE < allAds.length) await rndDelay(300, 600)
-      }
-
-      return res.json({ code: 0, data: {
-        list: rejected, total: rejected.length, scanned: allAds.length,
-        debug_get: debugGetResult,
-        debug_review: debugReview,
-      }})
+      return res.json({ code: 0, data: { list: rejected, total: rejected.length, scanned: smartPlusAds.length + manualAds.length } })
     }
 
     if (action === 'ad_appeal' && req.method === 'POST') {
