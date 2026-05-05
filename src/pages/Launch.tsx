@@ -1368,6 +1368,7 @@ function StepLaunch() {
 
           for (let ag = 0; ag < adgroupsPerCamp; ag++) {
             if (abortRef.current) { addLog('WARN', '⛔ Interrompido'); break }
+            if (accountNoPermission) break
             if (ag > 0) { addLog('DEBUG', '⏳ Aguardando entre conjuntos...'); await rndWait(3000, 6000) }
             setProgress(Math.round(15 + (((ai * campsPerAcc * adgroupsPerCamp + cp * adgroupsPerCamp + ag) / (selectedAccounts.length * campsPerAcc * adgroupsPerCamp)) * 80)))
 

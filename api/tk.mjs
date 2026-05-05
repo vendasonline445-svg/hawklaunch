@@ -1225,8 +1225,8 @@ export default async function handler(req, res) {
         }
         var sparkAuthCache = {}
 
-        // Ruído comportamental antes de começar (simula navegação no dashboard)
-        if (!testModeM) await exploreNoise(token, advId, accountProxy, L)
+        // Ruído comportamental antes de começar — apenas na criação de campanha nova (não em calls de adgroup extra)
+        if (!testModeM && !body.existing_campaign_id) await exploreNoise(token, advId, accountProxy, L)
 
         // Spark authorization (AUTH_CODE identity only)
         var noPermissionM = false
