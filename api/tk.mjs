@@ -1361,7 +1361,7 @@ export default async function handler(req, res) {
             request_id: makeRequestId(),
             advertiser_id: advId,
             campaign_id: campaignId,
-            adgroup_name: (body.adgroup_name || ('AG ' + campPayload.campaign_name)) + (adgroupsPerCampaign > 1 ? ' ' + String(ag + 1).padStart(2, '0') : ''),
+            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
             placement_type: 'PLACEMENT_TYPE_NORMAL',
             placements: ['PLACEMENT_TIKTOK'],
             billing_event: body.billing_event || 'OCPM',
