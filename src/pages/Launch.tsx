@@ -1011,7 +1011,7 @@ function StepLaunch() {
             addLog('INFO', '📝 Apelando: ' + (ad.ad_name || ad.ad_id))
             totalAppealed++
             try {
-              const ar = await api.appealAd(acc.advertiser_id, ad.ad_id, proxy)
+              const ar = await api.appealAd(acc.advertiser_id, ad.ad_id, ad.adgroup_id || undefined, proxy)
               if (ar.code === 0) {
                 addLog('OK', '✅ Apelo enviado: ' + (ad.ad_name || ad.ad_id))
                 totalAppealOk++
