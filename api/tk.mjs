@@ -659,9 +659,29 @@ export default async function handler(req, res) {
       var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
       var result
       if (adgroupId) {
-        // Manual campaign appeal: POST /adgroup/appeal/
-        var appealPayload = { advertiser_id: advId, adgroup_id: adgroupId }
-        result = await tt('/adgroup/appeal/', token, 'POST', appealPayload, proxyRaw)
+        // Manual appeal: Tenta a rota moderna de ad primeiro, que é o correto para criativos.
+        // TikTok freq. retorna 'Resp body status code...' quando a rota espera array ou não reconhece o ID.
+        result = await tt('/ad/appeal/', token, 'POST', {
+          advertiser_id: advId,
+          ad_ids: [adId],
+          appeal_reason: "I don't think there's a violation"
+        }, proxyRaw)
+        
+        if (result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
+          // Fallback para adgroup array (se a API estiver exigindo array no adgroup)
+          result = await tt('/adgroup/appeal/', token, 'POST', {
+            advertiser_id: advId,
+            adgroup_ids: [adgroupId]
+          }, proxyRaw)
+        }
+        
+        if (result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
+          // Fallback para a versão singular do adgroup
+          result = await tt('/adgroup/appeal/', token, 'POST', {
+            advertiser_id: advId,
+            adgroup_id: adgroupId
+          }, proxyRaw)
+        }
       } else {
         // Smart+ appeal: POST /smart_plus/ad/appeal/
         result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
