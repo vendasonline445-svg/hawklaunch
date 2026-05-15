@@ -627,7 +627,7 @@ export default async function handler(req, res) {
         while (true) {
           var manRes = await tt(
             '/ad/get/?advertiser_id=' + advId
-              + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'secondary_status', 'operation_status']))
+              + '&fields=' + encodeURIComponent(JSON.stringify(['ad_id', 'ad_name', 'adgroup_id', 'ad_group_id', 'secondary_status', 'operation_status']))
               + '&filtering=' + encodeURIComponent(JSON.stringify({ primary_status: 'STATUS_ALL' }))
               + '&page_size=100&page=' + manPage,
             token, 'GET', null, proxyRaw
@@ -645,7 +645,7 @@ export default async function handler(req, res) {
       manualAds.forEach(function(ad) {
         var st = ad.secondary_status || ''
         if (st.toUpperCase().includes('DENY') || st.toUpperCase().includes('REJECT')) {
-          rejected.push({ ad_id: ad.ad_id || '', ad_name: ad.ad_name || '', adgroup_id: ad.adgroup_id || '', review_status: st, appeal_status: '' })
+          rejected.push({ ad_id: ad.ad_id || '', ad_name: ad.ad_name || '', adgroup_id: ad.adgroup_id || ad.ad_group_id || '', review_status: st, appeal_status: '' })
         }
       })
 
@@ -672,7 +672,7 @@ export default async function handler(req, res) {
           result = { code: -1, message: e.message }
         }
         
-        if (result.code !== 0 && result.message && (result.message.includes('Resp body') || result.message.includes('não-JSON') || result.message.includes('404'))) {
+        if (result.code !== 0 && result.message && (result.message.includes('Resp body') || result.message.includes('não-JSON') || result.message.includes('404') || result.message.includes('Missing data') || result.message.includes('adgroup_id'))) {
           // Fallback para a versão singular do adgroup (algumas contas antigas exigem isso)
           try {
             result = await tt('/adgroup/appeal/', token, 'POST', {
