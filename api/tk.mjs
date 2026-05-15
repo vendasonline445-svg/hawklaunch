@@ -662,45 +662,51 @@ export default async function handler(req, res) {
       var proxyRaw = stickifyProxy((body && body.proxy) || null, advId)
       var result
       if (adgroupId) {
-        // Manual appeal: Tenta a rota moderna de ad primeiro, que é o correto para criativos.
-        // TikTok freq. retorna 'Resp body status code...' quando a rota espera array ou não reconhece o ID.
-        result = await tt('/ad/appeal/', token, 'POST', {
-          advertiser_id: advId,
-          ad_ids: [adId],
-          appeal_reason: "I don't think there's a violation"
-        }, proxyRaw)
-        
-        if (result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
-          // Fallback para adgroup array (se a API estiver exigindo array no adgroup)
+        // Manual appeal: A rota de appeal em v1.3 para campanhas normais é feita a nível de adgroup.
+        try {
           result = await tt('/adgroup/appeal/', token, 'POST', {
             advertiser_id: advId,
             adgroup_ids: [adgroupId]
           }, proxyRaw)
+        } catch (e) {
+          result = { code: -1, message: e.message }
         }
         
-        if (result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
-          // Fallback para a versão singular do adgroup
-          result = await tt('/adgroup/appeal/', token, 'POST', {
-            advertiser_id: advId,
-            adgroup_id: adgroupId
-          }, proxyRaw)
+        if (result.code !== 0 && result.message && (result.message.includes('Resp body') || result.message.includes('não-JSON') || result.message.includes('404'))) {
+          // Fallback para a versão singular do adgroup (algumas contas antigas exigem isso)
+          try {
+            result = await tt('/adgroup/appeal/', token, 'POST', {
+              advertiser_id: advId,
+              adgroup_id: adgroupId
+            }, proxyRaw)
+          } catch (e) {
+            result = { code: -1, message: e.message }
+          }
         }
       } else {
         // Smart+ appeal: POST /smart_plus/ad/appeal/
-        result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
-          advertiser_id: advId,
-          smart_plus_ad_id: adId,
-          appeal_reason: "I don't think there's a violation",
-          appeal_description: "I don't think there's a violation",
-        }, proxyRaw)
-        
-        if (result && result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
-          // Fallback array para Smart+ ad
+        try {
           result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
             advertiser_id: advId,
-            smart_plus_ad_ids: [adId],
-            appeal_reason: "I don't think there's a violation"
+            smart_plus_ad_id: adId,
+            appeal_reason: "I don't think there's a violation",
+            appeal_description: "I don't think there's a violation",
           }, proxyRaw)
+        } catch (e) {
+          result = { code: -1, message: e.message }
+        }
+        
+        if (result && result.code !== 0 && result.message && (result.message.includes('Resp body') || result.message.includes('não-JSON') || result.message.includes('404'))) {
+          // Fallback array para Smart+ ad
+          try {
+            result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
+              advertiser_id: advId,
+              smart_plus_ad_ids: [adId],
+              appeal_reason: "I don't think there's a violation"
+            }, proxyRaw)
+          } catch (e) {
+            result = { code: -1, message: e.message }
+          }
         }
       }
       return res.json(result)
