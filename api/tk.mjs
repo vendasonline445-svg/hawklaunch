@@ -660,8 +660,7 @@ export default async function handler(req, res) {
       var result
       if (adgroupId) {
         // Manual campaign appeal: POST /adgroup/appeal/
-        var appealPayload = { advertiser_id: advId, adgroup_id: adgroupId, appeal_reason: "I don't think there's a violation" }
-        if (adId) appealPayload.ad_id = adId
+        var appealPayload = { advertiser_id: advId, adgroup_id: adgroupId }
         result = await tt('/adgroup/appeal/', token, 'POST', appealPayload, proxyRaw)
       } else {
         // Smart+ appeal: POST /smart_plus/ad/appeal/
@@ -1307,11 +1306,11 @@ export default async function handler(req, res) {
             request_id: makeRequestId(),
             campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
             objective_type: effectiveObjective,
-            budget_mode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+            budget_mode: 'BUDGET_MODE_DAY',
             budget_optimize_on: isCBO,
             operation_status: body.start_paused ? 'DISABLE' : 'ENABLE',
+            budget: isCBO ? humanBudget : humanizeValue(convertBudget(50000, accountCurrency), 10)
           }
-          if (isCBO) campPayload.budget = humanBudget
 
           L(advId, 'Campaign: ' + campPayload.campaign_name)
           var campRes
