@@ -295,13 +295,16 @@ async function getOrCreateCTA(token, advertiserId, proxyRaw, objectiveType, prom
 
 async function resizeCardImage(imgBuf) {
   // TikTok inverte width/height no upload — enviar 750(w)x421(h) para que leia como 421x750
+  // Usamos JPEG com qualidade randômica para gerar um MD5 único por conta.
+  // Isso burla o cache do TikTok (deduplicação) que causa o erro "Insufficient permissions".
+  var q = 85 + Math.floor(Math.random() * 10) // 85 a 94
   var resized = await sharp(imgBuf, { failOnError: false })
     .resize(750, 421, { fit: 'cover', position: 'centre' })
-    .png({ compressionLevel: 6 })
+    .jpeg({ quality: q })
     .toBuffer()
   var meta = await sharp(resized).metadata()
   if (meta.width !== 750 || meta.height !== 421) {
-    resized = await sharp(resized).resize(750, 421, { fit: 'fill' }).png().toBuffer()
+    resized = await sharp(resized).resize(750, 421, { fit: 'fill' }).jpeg({ quality: q }).toBuffer()
   }
   return resized
 }
@@ -313,7 +316,7 @@ async function uploadCardImage(token, advertiserId, imgBuf) {
   formData.append('advertiser_id', advertiserId)
   formData.append('upload_type', 'UPLOAD_BY_FILE')
   formData.append('image_signature', imageMd5)
-  formData.append('image_file', new Blob([resized], { type: 'image/png' }), 'card_' + Date.now() + '.png')
+  formData.append('image_file', new Blob([resized], { type: 'image/jpeg' }), 'card_' + Date.now() + '.jpg')
   var uploadRes = await nodeFetch(TIKTOK_API + '/file/image/ad/upload/', {
     method: 'POST',
     headers: { 'Access-Token': token },
