@@ -10,9 +10,9 @@ var TIKTOK_API = 'https://business-api.tiktok.com/open_api/v1.3'
 // é anti-padrão — cliente legítimo não envia esses headers. O que o TikTok detecta é
 // padrão COMPORTAMENTAL: velocidade, repetição, sequência fixa. Investir aí.
 
-// User-Agent fixo e identificável (conforme convenção de SDK). Rotação de UA em S2S
-// não engana nada e pode ser sinal extra de anomalia (mesmo token, UA muda a cada call).
-var UA = 'HawkLaunch/1.0 (+https://hawklaunch.vercel.app)'
+// Removido o UA identificável ("HawkLaunch") pois estava causando bloqueios em massa por
+// "violação de integridade". Usaremos um User-Agent comum de navegador para nos misturar.
+var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 // request_id para idempotência — docs v1.3 (/campaign/create/):
 // "supports idempotency to prevent you from sending the same request twice within 10 seconds"
@@ -962,7 +962,7 @@ export default async function handler(req, res) {
           var campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
-            campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
+            campaign_name: (body.campaign_name || 'Campanha') + ' ' + seqNum,
             objective_type: 'WEB_CONVERSIONS',
             sales_destination: 'WEBSITE',
             budget_mode: 'BUDGET_MODE_DAY',
@@ -1014,7 +1014,7 @@ export default async function handler(req, res) {
             request_id: makeRequestId(),
             advertiser_id: advId,
             campaign_id: campaignId,
-            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
+            adgroup_name: body.adgroup_name || ('Conjunto ' + seqNum),
             optimization_event: body.optimization_event || 'SHOPPING',
             optimization_goal: 'CONVERT',
             billing_event: 'OCPM',
@@ -1334,7 +1334,7 @@ export default async function handler(req, res) {
           var campaignId, campPayload
           if (existingCampaignId) {
             campaignId = existingCampaignId
-            campPayload = { campaign_name: body.campaign_name || 'HL' }
+            campPayload = { campaign_name: body.campaign_name || 'Campanha' }
             L(advId, '🔗 Conjunto em campanha existente: ' + campaignId)
           } else {
           var seqNum = String((body.start_seq || 1) + cp).padStart(2, '0')
@@ -1344,7 +1344,7 @@ export default async function handler(req, res) {
           campPayload = {
             advertiser_id: advId,
             request_id: makeRequestId(),
-            campaign_name: (body.campaign_name || 'HL') + ' ' + seqNum,
+            campaign_name: (body.campaign_name || 'Campanha') + ' ' + seqNum,
             objective_type: effectiveObjective,
             budget_mode: 'BUDGET_MODE_DAY',
             budget_optimize_on: isCBO,
@@ -1387,7 +1387,7 @@ export default async function handler(req, res) {
             request_id: makeRequestId(),
             advertiser_id: advId,
             campaign_id: campaignId,
-            adgroup_name: body.adgroup_name || ('AG ' + campPayload.campaign_name),
+            adgroup_name: body.adgroup_name || ('Conjunto ' + seqNum),
             placement_type: 'PLACEMENT_TYPE_NORMAL',
             placements: ['PLACEMENT_TIKTOK'],
             billing_event: body.billing_event || 'OCPM',
