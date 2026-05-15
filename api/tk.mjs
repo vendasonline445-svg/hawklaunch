@@ -690,6 +690,15 @@ export default async function handler(req, res) {
           appeal_reason: "I don't think there's a violation",
           appeal_description: "I don't think there's a violation",
         }, proxyRaw)
+        
+        if (result && result.code !== 0 && result.message && result.message.includes('Resp body status code')) {
+          // Fallback array para Smart+ ad
+          result = await tt('/smart_plus/ad/appeal/', token, 'POST', {
+            advertiser_id: advId,
+            smart_plus_ad_ids: [adId],
+            appeal_reason: "I don't think there's a violation"
+          }, proxyRaw)
+        }
       }
       return res.json(result)
     }
@@ -962,6 +971,14 @@ export default async function handler(req, res) {
           for (var campAttempt = 0; campAttempt < 3; campAttempt++) {
             try {
               campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+              
+              // Se deu erro de budget mode, troca para DYNAMIC_DAILY_BUDGET e tenta de novo (TikTok update)
+              if (campRes && campRes.code !== 0 && campRes.message && campRes.message.toLowerCase().includes('budget mode is invalid')) {
+                L(advId, '🔄 Budget mode inválido, tentando BUDGET_MODE_DYNAMIC_DAILY_BUDGET...')
+                campPayload.budget_mode = 'BUDGET_MODE_DYNAMIC_DAILY_BUDGET'
+                campRes = await tt('/smart_plus/campaign/create/', token, 'POST', campPayload, accountProxy)
+              }
+              
               campOk = true; break
             } catch(e) {
               L(advId, '❌ Campaign network error: ' + e.message)
